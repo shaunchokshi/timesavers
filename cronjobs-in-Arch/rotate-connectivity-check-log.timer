@@ -1,0 +1,12 @@
+
+[Unit]
+Description=Scheduling timer for rotatelog.sh
+
+[Timer]
+OnCalendar=*-*-* 04:53:00
+RandomizedDelaySec=1h
+Persistent=true
+
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,229 @@
+## when in KDE and using a Global Menu widget at all, it makes GTK apps' menu bars disappear
+
+### THERE ARE MULTIPLE WAYS TO FIX, either individually per app or just apply it "globally"
+
+################### to individually do it, modify the app's .desktop file
+### # he desktop files for KDE are located in /usr/share/applications
+### some apps' .desktop files may be in ~/.local/share/flatpak/ or ~/.local/share/applications
+### or ~/.config/autostart or other random subfolders in the $HOME directory
+
+# change the .desktop file's Exec= line like this:
+
+# original looks like this (some .desktop files may have multiple Exec= lines)
+            # Exec=/usr/bin/gimp-3.0 %U
+            # Exec=libreoffice --calc %U
+
+# fix applied looks like this:
+            ### original line #Exec=/usr/bin/gimp-3.0 %U
+            # Exec=export ${dbus-launch} && /usr/bin/gimp-3.0 "$@" %U
+            ### original line #Exec=libreoffice --calc %U
+            # Exec=export ${dbus-launch} && libreoffice "$@" --calc %U
+
+#################### here are scripts to do it for all .desktop files in directory
+
+
+# Safe: Uses mktemp for temp files and doesn't overwrite unless a change was made.
+
+# Verbose mode: Shows exact lines changed and their line numbers.
+
+# Recursive or non-recursive: Based on user input.
+
+# Interactive: No need to hard-code anything.
+
+# Permission test on target directory whether user needs to run script with "sudo"
+
+# Logging of all affected files and modified lines.
+
+# Before attempting file changes, the script will:
+
+    #    Try to create a temp file in the target directory.
+
+    #    If it fails, it will print a warning and suggest running with sudo.
+
+
+# Prompts the user for:
+
+    #    The path to the directory.
+
+    #    y/n Apply changes recursively.
+
+    #    y/n Enable verbose output.
+
+    #    y/n Do a dry run (show changes only, no file modifications),
+
+    #    Or proceed with modifying the files.
+
+
+# Processes .desktop files, modifying all Exec= lines as you specified.
+
+# Inserts a commented version of the original line, and the modified Exec=export ${dbus-launch} && ... "$@" version directly below it.
+
+# If verbose mode is enabled, it prints:
+
+    #    Each modified filename.
+
+    #    The line number and before/after of each modified line.
+
+# A logs/ directory will be created alongside the script.
+
+    #    The log will be named using the ISO 8601 timestamp:
+    #    ./logs/<scriptname>-2025-04-30T14:02.log
+    #    (using date -Iminutes for SO 8601-2:2019 compliance)
+
+
+### START SCRIPT ###
+
+#!/bin/bash
+
+# --- Setup Script Directory and Log File ---
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+mkdir -p "$script_dir/logs"
+export DTG=$(date -Iminutes)
+log_file="$script_dir/logs/fix-gtk-menubars-in-kde-${DTG}.log"
+
+# --- Prompts ---
+read -rp "Enter the path to the directory containing .desktop files: " base_dir
+read -rp "Apply changes recursively? (y/n): " recursive
+read -rp "Enable verbose output? (y/n): " verbose
+read -rp "Run as dry run first (no changes to files)? (y/n): " dryrun
+
+# Normalize ~ and ensure valid directory
+base_dir="${base_dir/#\~/$HOME}"
+if [[ ! -d "$base_dir" ]]; then
+    echo "Error: '$base_dir' is not a valid directory." | tee -a "$log_file"
+    exit 1
+fi
+
+# --- Permission Test ---
+touch "$base_dir/.write_test_$$" 2>/dev/null
+if [[ $? -ne 0 ]]; then
+    echo "❌ You do not have write permission to '$base_dir'." | tee -a "$log_file"
+    echo "💡 Try running this script with sudo:" | tee -a "$log_file"
+    echo "    sudo $0" | tee -a "$log_file"
+    exit 1
+else
+    rm -f "$base_dir/.write_test_$$"
+fi
+
+# --- Get .desktop files ---
+if [[ "$recursive" == [Yy]* ]]; then
+    file_list=$(find "$base_dir" -type f -name "*.desktop")
+else
+    file_list=$(find "$base_dir" -maxdepth 1 -type f -name "*.desktop")
+fi
+
+# --- Processing Function ---
+process_files() {
+    local apply_changes=$1
+    while IFS= read -r file; do
+        modified=false
+        tmpfile=$(mktemp)
+
+        awk -v verbose="$verbose" -v filename="$file" -v apply="$apply_changes" -v logf="$log_file" '
+        BEGIN { lineno = 0 }
+        {
+            lineno++
+            if ($0 ~ /^Exec=/) {
+                original = $0
+                sub(/^Exec=/, "", $0)
+                cmd = $1
+                rest = substr($0, length(cmd) + 1)
+                new_line = "Exec=export ${dbus-launch} && " cmd " \"$@\"" rest
+
+                if (verbose == "y" || verbose == "Y") {
+                    printf "[%s] Line %d modified:\n  - %s\n  + %s\n\n", filename, lineno, original, new_line
+                }
+
+                if (apply == "y") {
+                    printf "#%s\n", original >> "'"$tmpfile"'"
+                    printf "%s\n", new_line >> "'"$tmpfile"'"
+                    printf "[%s] Line %d modified:\n  - %s\n  + %s\n\n", filename, lineno, original, new_line >> logf
+                } else {
+                    printf "[DRY RUN] %s: Line %d would be changed.\n", filename, lineno >> logf
+                    printf "[DRY RUN]  - %s\n[DRY RUN]  + %s\n\n", original, new_line >> logf
+                    print "[DRY RUN] Previewed changes written to log."
+                }
+                modified = 1
+                next
+            }
+            if (apply == "y") {
+                print >> "'"$tmpfile"'"
+            }
+        }
+        END {
+            if (modified && (verbose == "y" || verbose == "Y")) {
+                print "------------------------------------------------------------"
+            }
+        }
+        ' "$file"
+
+        if [[ "$apply_changes" == "y" && -s "$tmpfile" ]]; then
+            if ! cmp -s "$file" "$tmpfile"; then
+                mv "$tmpfile" "$file"
+                [[ "$verbose" == [Yy]* ]] && echo "Modified file: $file" | tee -a "$log_file"
+            else
+                rm "$tmpfile"
+            fi
+        else
+            rm -f "$tmpfile"
+        fi
+    done <<< "$file_list"
+}
+
+# --- Run Dry Run First ---
+if [[ "$dryrun" == [Yy]* ]]; then
+    echo -e "\n=== DRY RUN: Previewing changes ===" | tee -a "$log_file"
+    process_files "n"
+    echo -e "\nDry run complete. No files were modified.\n" | tee -a "$log_file"
+    read -rp "Apply these changes now? (y/n): " apply_now
+    if [[ "$apply_now" == [Yy]* ]]; then
+        echo "Applying changes..." | tee -a "$log_file"
+        process_files "y"
+        echo "✅ Changes applied." | tee -a "$log_file"
+    else
+        echo "No changes were made." | tee -a "$log_file"
+    fi
+else
+    process_files "y"
+    echo "✅ Changes applied directly (no dry run)." | tee -a "$log_file"
+fi
+
+echo "📄 Log saved to: $log_file"
+
+### END SCRIPT ###
+
+
+
+
+################### THIS IS HOW TO DO IT INDIVIDUALLY BUT IS MORE WORK
+
+#from https://medium.com/@ftaioli/fixing-missing-menus-in-gtk-apps-on-kde-plasma-with-global-menu-widget-e578d48edf02
+
+##### to test:
+
+### The Quick Fix
+
+### Turns out, setting a couple of environment variables before launching the application does the trick!
+
+# first run this
+            # export $(dbus-launch)
+
+# This command exports DBUS_SESSION_BUS_ADDRESS and DBUS_SESSION_BUS_PID variables.
+
+# then Launch the application from the same terminal:
+
+            # inkscape
+
+# if it works, then:
+
+# make a script:
+
+# this is ~/scripts/inkscale_wrapper.sh
+
+            #!/bin/sh
+            # export $(dbus-launch)
+            # inkscape "$@"
+
+#  make it executable
+
+# then edit the application launcher item and replace the Program with the new script

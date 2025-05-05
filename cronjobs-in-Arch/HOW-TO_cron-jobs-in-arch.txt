@@ -1,0 +1,60 @@
+####  1. Create two files, one service file and one timer file. 
+####      Both names (.timer and .service) have to match. 
+
+### e.g.:
+scheduledReboot.service
+scheduledReboot.timer
+
+#######
+
+####  2.1 The File scheduledReboot.service contains:
+
+[Unit]
+Description=Scheduled Reboot
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/systemctl --force reboot
+
+
+
+####  2.2 The file scheduledReboot.timer contains:
+
+[Unit]
+Description=Reboot Scheduling.
+
+[Timer]
+OnCalendar=*-*-* 01:30:00
+
+[Install]
+WantedBy=multi-user.target
+
+
+########
+
+####  3  Copy the two files to /usr/lib/systemd/system/
+## (The folder /usr/lib/systemd/system/... is the default folder containing all .service files)
+
+sudo cp scheduledReboot.service /usr/lib/systemd/system/
+sudo cp scheduledReboot.timer /usr/lib/systemd/system/
+
+
+####  4  And finally start the jobs:
+
+sudo systemctl start scheduledReboot.timer
+
+sudo systemctl enable scheduledReboot.timer
+
+####  5  Check if the job is successfully created:
+
+sudo systemctl list-timers --all
+
+# and/or
+
+sudo systemctl status scheduledReboot.timer
+
+# ..that shows stuff like:
+
+Trigger: Sun 2020-05-31 01:30:00 EDT; 10h left
+
+

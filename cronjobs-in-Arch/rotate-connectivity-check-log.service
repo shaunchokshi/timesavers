@@ -1,0 +1,6 @@
+[Unit]
+Description=Rotates the connectivity-checks log file
+
+[Service]
+Type=simple
+ExecStart=/home/shaun/scripts/rotatelog.sh

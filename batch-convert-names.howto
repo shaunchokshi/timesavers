@@ -1,0 +1,8 @@
+### run this command in the directory where you want to rename files matching the pattern
+
+for f in PlaygroundImage*.png; do mv -i -v $f ${f/PlaygroundImage/image}; done
+###      ^rename files matching this pattern      ^change from    ^to
+
+###     the *.png in this example would mean run this operation on files matching this pattern
+###     then in the function ${f/replacethistextstring/withthistextstring}
+###     is where you are defining the part of the filename to change
