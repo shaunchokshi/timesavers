@@ -1,3 +1,4 @@
+#!/bin/bash 
 # quick bash function to read .env file
 # use it via:
 # source readenv
@@ -10,15 +11,16 @@
 # modified from https://gist.github.com/mihow/9c7f559807069a03e302605691f85572
 # fixed for whitespace issues, posix compliance (e.g. \t on mac means t)
 #
-# NOT a standalone script as when used as a standalone script, it'll read in the ENV variables into a sub-process, not the
-# calling process
+# this is NOT a standalone script normally
+# it can be used as a standalone script for some use cases
+# when used standalone, it'll read in the ENV variables into a sub-process, not the calling process
 
 readenv() {
   local filePath="${1:-.env}"
 
   if [ ! -f "$filePath" ]; then
-    # silently be done
-    # put some error / echo if you prefer non-silent errors
+    # as written with new line after then, it goes to "return 0" and silently finishes
+    # if you want to see erros instead put some error / echo
     return 0
   fi
 

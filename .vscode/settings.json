@@ -1,0 +1,5 @@
+{
+    "trunk.addToolsToPath": true,
+    "trunk.inlineDecoratorsForAllExtensions": true,
+    "trunk.showBelowThresholdIssues": false
+}
