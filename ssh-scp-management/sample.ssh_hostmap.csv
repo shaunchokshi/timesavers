@@ -1,0 +1,5 @@
+host,label,sshuser,keyfile,port,comment
+web.example.com,web,user1,id_rsa_web,2222,Main web server
+db.example.com,db,admin,id_ed25519_db,2022,Database access
+backup.example.com,backup,user2,id_rsa_backup,,Default port
+db.example.com,root-db,root,id_ed25519_db,2022,Root DB login

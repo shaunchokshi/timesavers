@@ -1,0 +1,60 @@
+#!/usr/bin/env zsh
+# Requires zsh (this will work in bash >4).
+# This script adds a new SSH host entry to a CSV file for easy management of SSH connections.
+# It prompts the user for various details about the SSH connection and saves them in a CSV format.
+# The CSV file is expected to have a specific format with headers: label, sshuser, host, keyfile, port, comment.
+# The script also checks if the CSV file exists and creates it with a header if it doesn't.
+# It also ensures that the input values do not contain commas, as they would break the CSV format.
+# It also provides a confirmation prompt before adding the entry to the CSV file.
+
+
+CSV_FILE="${HOME}/.ssh_hostmap.csv"
+KEYPATH_DEFAULT="${HOME}/.ssh"
+DEFAULT_PORT=22
+KEYFILE_DEFAULT="${KEYPATH_DEFAULT}/id_rsa"
+
+# Check if the CSV file exists; if not, create it with header
+if [[ ! -f "${CSV_FILE}" ]]; then
+  echo "label,sshuser,host,keyfile,port,comment" > "${CSV_FILE}"
+  echo "Created new CSV file at ${CSV_FILE}"
+fi
+
+echo "=== Add a New SSH Host Entry ==="
+read -e -p "Hostname or IP: " -i "" host
+read -e -p "Label, as in the "friendly name" for the host to connect to via command ssh-[label] / scp-[label]): " label
+read -e -p "SSH Username: " -i ${USER} sshuser
+read -e -p "Key filename (in ${KEYPATH_DEFAULT}): " -i "${KEYFILE_DEFAULT}" keyfile
+read -e -p "Remote Host's SSH Port: " -i "${DEFAULT_PORT}" port
+read -e -p "Comment or description (optional): " -i "" comment
+
+# Strip commas to avoid breaking CSV format
+label="${label//,/}"
+sshuser="${sshuser//,/}"
+host="${host//,/}"
+keyfile="${keyfile//,/}"
+port="${port//,/}"
+comment="${comment//,/}"
+
+# Default port if blank
+if [[ -z "${port}" ]]; then
+  port="${DEFAULT_PORT}"
+fi
+
+# Confirm entry
+echo
+echo "📝 New Entry:"
+printf "  %-8s : %s\n" "Label" "${label}"
+printf "  %-8s : %s\n" "User" "${sshuser}"
+printf "  %-8s : %s\n" "Host" "${host}"
+printf "  %-8s : %s\n" "Key" "${keyfile}"
+printf "  %-8s : %s\n" "Port" "${port}"
+printf "  %-8s : %s\n" "Comment" "${comment}"
+echo
+
+read -e -p "Add this entry to ${CSV_FILE}? (y/n): " confirm
+if [[ "${confirm}" =~ ^[Yy]$ ]]; then
+  echo "${label},${sshuser},${host},${keyfile},${port},${comment}" >> "${CSV_FILE}"
+  echo "✅ Added."
+else
+  echo "❌ Cancelled."
+fi
