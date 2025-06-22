@@ -1,0 +1,16 @@
+#!/bin/bash
+
+### copy this script to $HOME/some/path/shopt 
+### link this file to a location in your $PATH, e.g. ~/.local/bin/ or /usr/local/bin 
+
+# sudo ln -s $HOME/some/path/shopt /usr/local/bin/ 
+###  OR
+# ln -s $HOME/some/path/shopt $HOME/.local/bin/
+
+
+args='';
+for item in $@
+  do
+    args="$args $item";
+  done
+shopt $args;
