@@ -15,7 +15,8 @@ echo "pandoc --list-input-formats"
 # Set the input and output file extensions
 read -e -p "File extension (format) of current files (convert FROM):" input_format
 
-if [[ "$input_format" == "markdown" ]]; then
+if [[ "$input_format" == "markdown" || "$input_format" == "md" ]]; then
+    input_format=markdown
     input_ext=md
 else
     input_ext=$input_format
@@ -28,7 +29,8 @@ echo "pandoc --list-output-formats"
 
 read -e -p "Desired file extension (format) of files (convert TO):" output_format
 
-if [[ "$output_format" == "markdown" ]]; then
+if [[ "$output_format" == "markdown" || "$output_format" == "md" ]]; then
+    output_format=markdown
     output_ext=md
 else
     output_ext=$output_format
@@ -37,27 +39,33 @@ fi
 workdir="$(pwd)"
 read -e -i "$workdir" -p "Enter path for files' directory:" workdir
 
-# Loop through all files with the input extension in the current directory
- set -evx # e = stop on first error; v = verbose, print each line before execute; x =  print each line with the subs/vars/shell expansions before executing
+# set -evx  # stop on error, verbose, and print expanded commands
+# set -ex # stop on error and print expanded commands
+set -e #stop on error
+
 convert_file() {
-        #for file in *."$input_ext"; do
-            # Check if the file exists
-            if [ -f "$i" ]; then
-            # Get the filename without the extension
-                filename=`basename "$i" .$input_ext`
-            # Convert the file using pandoc
-                pandoc -f $input_format -t $output_format "$i" -o "$filename.$output_ext"
-                echo "Converted $i to $filename.$output_ext"
-            else
-                echo "File not found: $i"
-            fi
-        #done
+    local input_file="$1"
+    if [ -f "$input_file" ]; then
+        local filename=$(basename "$input_file" .$input_ext)
+        local outdir=$(dirname "$input_file")
+        local output_file="$outdir/$filename.$output_ext"
+
+        if [ -f "$output_file" ]; then
+            echo "Skipping $input_file – output file already exists: $output_file"
+        else
+            pandoc -f "$input_format" -t "$output_format" "$input_file" -o "$output_file"
+            echo "Converted $input_file to $output_file"
+        fi
+    else
+        echo "File not found: $input_file"
+    fi
 }
 
 cd "$workdir"
 IFS=$'\n'
 declare -a paths=($(find "${workdir}" -name "*.${input_ext}"))
 unset IFS
+
 for i in "${paths[@]}"; do
-        convert_file
+    convert_file "$i"
 done
