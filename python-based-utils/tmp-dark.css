@@ -1,0 +1,101 @@
+
+.dark {
+/* Converted CSS Color Variables */
+
+  --background: #FFFFFF;
+  /* --background: rgb(255, 255, 255); */
+  /* --background: hsl(0, 0%, 100%); */
+  --foreground: #0B0908;
+  /* --foreground: rgb(11, 9, 8); */
+  /* --foreground: hsl(20, 16%, 4%); */
+  --muted: #F5F5F4;
+  /* --muted: rgb(245, 245, 244); */
+  /* --muted: hsl(60, 5%, 96%); */
+  --muted-foreground: #78706B;
+  /* --muted-foreground: rgb(120, 112, 107); */
+  /* --muted-foreground: hsl(23, 6%, 45%); */
+  --popover: #FFFFFF;
+  /* --popover: rgb(255, 255, 255); */
+  /* --popover: hsl(0, 0%, 100%); */
+  --popover-foreground: #0B0908;
+  /* --popover-foreground: rgb(11, 9, 8); */
+  /* --popover-foreground: hsl(20, 16%, 4%); */
+  --card: #FFFFFF;
+  /* --card: rgb(255, 255, 255); */
+  /* --card: hsl(0, 0%, 100%); */
+  --card-foreground: #0B0908;
+  /* --card-foreground: rgb(11, 9, 8); */
+  /* --card-foreground: hsl(20, 16%, 4%); */
+  --border: #E7E4E3;
+  /* --border: rgb(231, 228, 227); */
+  /* --border: hsl(15, 8%, 90%); */
+  --input: #E7E4E3;
+  /* --input: rgb(231, 228, 227); */
+  /* --input: hsl(15, 8%, 90%); */
+  --primary: #0C395E;
+  /* --primary: rgb(12, 57, 94); */
+  /* --primary: hsl(207, 77%, 21%); */
+  --primary-foreground: #F9FCFF;
+  /* --primary-foreground: rgb(249, 252, 255); */
+  /* --primary-foreground: hsl(210, 100%, 99%); */
+  --secondary: #308259;
+  /* --secondary: rgb(48, 130, 89); */
+  /* --secondary: hsl(150, 46%, 35%); */
+  --secondary-foreground: #F9F9F9;
+  /* --secondary-foreground: rgb(249, 249, 249); */
+  /* --secondary-foreground: hsl(0, 0%, 98%); */
+  --accent: #E9AC10;
+  /* --accent: rgb(233, 172, 16); */
+  /* --accent: hsl(43, 87%, 49%); */
+  --accent-foreground: #F9F9F9;
+  /* --accent-foreground: rgb(249, 249, 249); */
+  /* --accent-foreground: hsl(0, 0%, 98%); */
+  --destructive: #EE4444;
+  /* --destructive: rgb(238, 68, 68); */
+  /* --destructive: hsl(0, 83%, 60%); */
+  --destructive-foreground: #F9F9F8;
+  /* --destructive-foreground: rgb(249, 249, 248); */
+  /* --destructive-foreground: hsl(60, 8%, 97%); */
+  --ring: #0B0908;
+  /* --ring: rgb(11, 9, 8); */
+  /* --ring: hsl(20, 16%, 4%); */
+  --success: #28A846;
+  /* --success: rgb(40, 168, 70); */
+  /* --success: hsl(134, 62%, 41%); */
+  --success-foreground: #F9F9F9;
+  /* --success-foreground: rgb(249, 249, 249); */
+  /* --success-foreground: hsl(0, 0%, 98%); */
+  --text-primary: #22262A;
+  /* --text-primary: rgb(34, 38, 42); */
+  /* --text-primary: hsl(210, 11%, 15%); */
+  --background-light: #F9F9FA;
+  /* --background-light: rgb(249, 249, 250); */
+  /* --background-light: hsl(240, 9%, 98%); */
+/*
+  --background: 240 10% 3.9%;
+  --foreground: 0 0% 98%;
+  --muted: 240 3.7% 15.9%;
+  --muted-foreground: 240 5% 64.9%;
+  --popover: 240 10% 3.9%;
+  --popover-foreground: 0 0% 98%;
+  --card: 240 10% 3.9%;
+  --card-foreground: 0 0% 98%;
+  --border: 240 3.7% 15.9%;
+  --input: 240 3.7% 15.9%;
+  --primary: 207 77% 21%;
+  --primary-foreground: 211 100% 99%;
+  --secondary: 150 46% 35%;
+  --secondary-foreground: 0 0% 98%;
+  --accent: 43 87% 49%;
+  --accent-foreground: 0 0% 98%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 0 0% 98%;
+  --ring: 240 4.9% 83.9%;
+  --radius: 0.5rem;
+  --success: 134 61% 41%;
+  --success-foreground: 0 0% 98%;
+  --text-primary: 210 11% 15%;
+  --background-light: 240 10% 96%;
+*/
+}
+
