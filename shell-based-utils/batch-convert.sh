@@ -53,7 +53,7 @@ convert_file() {
         if [ -f "$output_file" ]; then
             echo "Skipping $input_file – output file already exists: $output_file"
         else
-            pandoc -f "$input_format" -t "$output_format" "$input_file" -o "$output_file"
+            pandoc --pdf-engine=typst -f "$input_format" -t "$output_format" "$input_file" -o "$output_file"
             echo "Converted $input_file to $output_file"
         fi
     else
