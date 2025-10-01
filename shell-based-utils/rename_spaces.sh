@@ -16,33 +16,58 @@ sanitize_filename() {
     # Generate unique timestamp for non-ASCII characters
     local timestamp=$(date '+%Y-%m-%d_%H%M%S%N')
     
-    # Replace problematic ASCII characters with underscores
-    # This includes: spaces, brackets, special chars [ # % & ! @ $ ^ * ( ) / ? ' " ; : > < , = { } ]
-    local sanitized=$(echo "$filename" | sed 's/[ #%&!@$^*()/?'"'"'";:><,={}\[\]/]/_/g')
+    # Use awk to handle character replacement - much cleaner than sed
+    local sanitized=$(echo "$filename" | awk -v timestamp="$timestamp" '
+    {
+        result = ""
+        has_non_ascii = 0
+        
+        for (i = 1; i <= length($0); i++) {
+            char = substr($0, i, 1)
+            ascii_code = ord(char)
+            
+            # Check if character is ASCII (0-127)
+            if (ascii_code < 0 || ascii_code > 127) {
+                # Non-ASCII character - mark that we found one
+                has_non_ascii = 1
+                # For now, skip non-ASCII characters, we will handle them later
+            } else {
+                # ASCII character - check if it is problematic
+                if (char == " " || char == "#" || char == "%" || char == "&" || 
+                    char == "!" || char == "@" || char == "$" || char == "^" || 
+                    char == "*" || char == "(" || char == ")" || char == "/" || 
+                    char == "?" || char == "\047" || char == "\042" || char == ";" || 
+                    char == ":" || char == ">" || char == "<" || char == "," || 
+                    char == "=" || char == "{" || char == "}" || char == "[" || 
+                    char == "]") {
+                    result = result "_"
+                } else {
+                    result = result char
+                }
+            }
+        }
+        
+        # If we found non-ASCII characters, append timestamp
+        if (has_non_ascii) {
+            if (result == "") {
+                result = timestamp
+            } else {
+                result = result "_" timestamp
+            }
+        }
+        
+        print result
+    }
     
-    # Replace non-ASCII characters with timestamp
-    # Use a more portable method to detect non-ASCII characters
-    local temp_file=$(mktemp)
-    echo "$sanitized" > "$temp_file"
+    function ord(c) {
+        return int(sprintf("%d", c))
+    }')
     
-    # Check if file contains non-ASCII characters by comparing byte count
-    local byte_count=$(wc -c < "$temp_file")
-    local char_count=$(wc -m < "$temp_file")
+    # Clean up multiple consecutive underscores
+    sanitized=$(echo "$sanitized" | awk '{gsub(/__+/, "_"); print}')
     
-    rm "$temp_file"
-    
-    # If byte count != char count, there are non-ASCII characters
-    if [ "$byte_count" -ne "$char_count" ]; then
-        # Replace non-ASCII characters with timestamp using | as delimiter to avoid conflicts
-        sanitized=$(echo "$sanitized" | sed "s|[^\x00-\x7F]|${timestamp}|g")
-    fi
-    
-    # Remove multiple consecutive underscores and replace with single underscore
-    sanitized=$(echo "$sanitized" | sed 's/__*/_/g')
-    
-    # Remove leading/trailing underscores (but keep them if they're part of the original name structure)
-    # Only remove if they were added by our replacement
-    sanitized=$(echo "$sanitized" | sed 's/^_*//; s/_*$//')
+    # Remove leading/trailing underscores
+    sanitized=$(echo "$sanitized" | awk '{gsub(/^_+|_+$/, ""); print}')
     
     # Ensure the filename doesn't start with a dot (hidden file)
     if [[ "$sanitized" == .* ]]; then
