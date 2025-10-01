@@ -33,8 +33,8 @@ sanitize_filename() {
     
     # If byte count != char count, there are non-ASCII characters
     if [ "$byte_count" -ne "$char_count" ]; then
-        # Replace non-ASCII characters with timestamp
-        sanitized=$(echo "$sanitized" | sed "s/[^\x00-\x7F]/${timestamp}/g")
+        # Replace non-ASCII characters with timestamp using | as delimiter to avoid conflicts
+        sanitized=$(echo "$sanitized" | sed "s|[^\x00-\x7F]|${timestamp}|g")
     fi
     
     # Remove multiple consecutive underscores and replace with single underscore
