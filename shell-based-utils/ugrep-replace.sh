@@ -50,7 +50,7 @@ mapfile -t FILES < <("${UGREP_LIST_FILES[@]}" || true)
 if [[ ${#FILES[@]} -eq 0 ]]; then
   echo "No files contained the target pattern. Nothing to do."
   exit 0
-fi
+else
 
 CHANGED_COUNT=0
 
@@ -73,18 +73,21 @@ for f in "${FILES[@]}"; do
     UGREP_REPL_PAT="$PATTERN" UGREP_REPL_REP="$REPLACEMENT" \
       perl -0777 -i -pe 'BEGIN{$p=$ENV{UGREP_REPL_PAT}; $r=$ENV{UGREP_REPL_REP}}
                           s{$p}{\Q$r\E}g' -- "$f"
+
+  echo "$f  (backup: $(dirname -- "$f")/.original-$(basename -- "$f"))"
+
   fi
 
   (( CHANGED_COUNT++ ))
+echo "Completed replacements in $CHANGED_COUNT file(s)."
+
 done
 
-echo "Completed replacements in $CHANGED_COUNT file(s)."
 echo
 
+fi
+
 echo "=== Files changed (backups created alongside originals) ==="
-for f in "${FILES[@]}"; do
-  echo "$f  (backup: $(dirname -- "$f")/.original-$(basename -- "$f"))"
-done
 
 echo
 echo "=== Post-change verification: occurrences of the NEW string ==="

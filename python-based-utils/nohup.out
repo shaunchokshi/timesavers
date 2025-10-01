@@ -1,0 +1,16 @@
+Set Windows Application User Model ID (AUMID) { AUMID: 'org.whispersystems.signal-desktop' }
+NODE_ENV production
+NODE_CONFIG_DIR /usr/lib/signal-desktop/resources/app.asar/config
+NODE_CONFIG {}
+ALLOW_CONFIG_MUTATIONS undefined
+HOSTNAME x6-79
+NODE_APP_INSTANCE undefined
+SUPPRESS_NO_CONFIG_WARNING undefined
+SIGNAL_ENABLE_HTTP undefined
+userData: /home/shaun/.config/Signal
+config/get: Successfully read user config file
+config/get: Successfully read ephemeral config file
+Authorization required, but no authorization protocol specified
+
+[2221516:0706/140519.879571:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:250] Missing X server or $DISPLAY
+[2221516:0706/140519.879606:ERROR:ui/aura/env.cc:257] The platform failed to initialize.  Exiting.
