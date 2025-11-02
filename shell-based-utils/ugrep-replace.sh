@@ -52,7 +52,7 @@ if [[ ${#FILES[@]} -eq 0 ]]; then
   exit 0
 else
 
-CHANGED_COUNT=0
+#CHANGED_COUNT=0
 
 for f in "${FILES[@]}"; do
   [[ -f "$f" ]] || continue
@@ -78,8 +78,8 @@ for f in "${FILES[@]}"; do
 
   fi
 
-  (( CHANGED_COUNT++ ))
-echo "Completed replacements in $CHANGED_COUNT file(s)."
+ # (( CHANGED_COUNT++ ))
+#echo "Completed replacements in $CHANGED_COUNT file(s)."
 
 done
 
