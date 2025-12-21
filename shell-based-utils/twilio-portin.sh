@@ -360,6 +360,30 @@ op_portability_check() {
   fi
 }
 
+op_upload_document() {
+  bold "Upload Utility Bill Document"
+  get_auth
+
+  local pdf_path=""
+  while true; do
+    prompt_path "Enter path to utility bill PDF: " "$(pwd)" pdf_path
+    confirm_value "Utility bill PDF path" "$pdf_path" && break
+  done
+
+  local default_name="utility-bill-$(date +%Y-%m)"
+  local friendly_name=""
+  prompt_with_retry "Enter friendly_name for document" "Document friendly_name" "$default_name" friendly_name
+
+  local document_sid
+  document_sid="$(upload_document_utility_bill "$pdf_path" "$friendly_name")" || { warn "Document upload failed."; return; }
+
+  echo "" >&2
+  ok "Document SID: $document_sid"
+  bold "Save this Document SID for creating your port-in request."
+  echo "" >&2
+  read -n 1 -s -r -p "Press any key to return to main menu..."
+}
+
 upload_document_utility_bill() {
   local pdf_path="$1"
   local friendly_name="$2"
@@ -423,11 +447,40 @@ print(dt2.strftime("%H:%M:%S")+offset)
 ' "$start" "$hours"
 }
 
-op_submit_port_in_request() {
-  bold "Submit Port-In Request (single US non-toll-free number)"
+op_generate_port_in_json() {
+  bold "Generate Port-In Request JSON (single US non-toll-free number)"
   warn "This script is set up for ONE number per port-in request."
 
+  # Check if user has document SID
+  echo "" >&2
+  local has_doc_sid=""
+  while true; do
+    read -r -p "Do you have a Document SID for the utility bill already uploaded? [y/n]: " has_doc_sid
+    case "${has_doc_sid,,}" in
+      y|yes)
+        break
+        ;;
+      n|no)
+        echo "" >&2
+        warn "Please upload the utility bill document first using CLI menu option 2."
+        echo "" >&2
+        read -n 1 -s -r -p "Press any key to return to main menu or press 0 to exit..."
+        local key_pressed="$REPLY"
+        if [[ "$key_pressed" == "0" ]]; then
+          ok "Bye."; exit 0
+        fi
+        return
+        ;;
+      *)
+        warn "Please answer y or n."
+        ;;
+    esac
+  done
+
   get_auth
+
+  local document_sid=""
+  prompt_with_retry "Enter Document SID (e.g., RDxxxxxxxx...)" "Document SID" "" document_sid
 
   local account_sid=""
   prompt_with_retry "Enter your Twilio Account SID (used in request body)" "Account SID" "" account_sid
@@ -441,23 +494,10 @@ op_submit_port_in_request() {
     confirm_value "Normalized phone number (E.164)" "$e164" && break
   done
 
-  local pdf_path=""
-  while true; do
-    prompt_path "Enter path to utility bill PDF: " "$(pwd)" pdf_path
-    confirm_value "Utility bill PDF path" "$pdf_path" && break
-  done
-
-  local friendly_name="phone${ten:6:4}-utility-bill-$(date +%Y-%m)"
-  prompt_with_retry "Enter friendly_name for document" "Document friendly_name" "$friendly_name" friendly_name
-
   local notification_csv
   notification_csv="$(collect_notification_emails)"
   local notification_json
   notification_json="$(emails_csv_to_json_array "$notification_csv")"
-
-  # Upload document (starts logging because it's an API call)
-  local document_sid
-  document_sid="$(upload_document_utility_bill "$pdf_path" "$friendly_name")" || return
 
   local pin=""
   while true; do
@@ -585,30 +625,32 @@ print(json.dumps(obj, indent=2))
 "$customer_type" "$customer_name" "$account_number" "$atn" "$auth_rep" "$auth_email" \
 "$street" "$city" "$state" "$zip" "$country" "$notification_json")"
 
+  # Generate filename with phone number and ISO 8601 timestamp
+  local json_filename="port-in-request-${e164}-$(iso_ts).json"
+
+  # Write JSON to file
+  printf "%s\n" "$payload" > "$json_filename"
+
   echo "" >&2
   bold "Port-In Request JSON Preview:"
   printf "%s\n" "$payload" >&2
 
-  local url="https://numbers.twilio.com/v1/Porting/PortIn"
   echo "" >&2
-  bold "Request preview:"
-  printf "  POST %s\n" "$url" >&2
-
-  confirm_yn "Send port-in request now?" "y" || { warn "Cancelled."; return; }
-
-  # API call => ensure logging is on
-  start_logging_if_needed
-
-  local resp
-  resp="$(curl_json "POST" "$url" "$payload")"
-
+  ok "The port-in request JSON has been generated and written to file: $json_filename"
   echo "" >&2
-  bold "Response:"
-  pretty_print_json "$resp" >&2
-
-  local port_in_sid
-  port_in_sid="$(json_get "$resp" "sid")"
-  [[ -n "$port_in_sid" ]] && ok "Port-in request created. PortInRequestSid: $port_in_sid" || warn "No 'sid' found in response; check list/status."
+  bold "To submit the JSON, run this command from your terminal after exiting the main menu:"
+  echo "" >&2
+  printf "  curl -X POST https://numbers.twilio.com/v1/Porting/PortIn \\\\\n" >&2
+  printf "    -u \"\${API_KEY}:\${API_SECRET}\" \\\\\n" >&2
+  printf "    -H \"Content-Type: application/json\" \\\\\n" >&2
+  printf "    --data @%s\n" "$json_filename" >&2
+  echo "" >&2
+  read -n 1 -s -r -p "Press any key to return to main menu or press 0 to exit this utility and return to your terminal session..."
+  local key_pressed="$REPLY"
+  echo "" >&2
+  if [[ "$key_pressed" == "0" ]]; then
+    ok "Bye."; exit 0
+  fi
 }
 
 op_list_port_in_requests() {
@@ -669,22 +711,24 @@ main_menu() {
     echo "" >&2
     bold "Twilio Porting CLI"
     echo "1) Check a number for portability" >&2
-    echo "2) Submit a port-in request (1 number)" >&2
-    echo "3) Check port-in request status (by SID)" >&2
-    echo "4) List port-in requests" >&2
-    echo "5) Exit" >&2
+    echo "2) Upload utility bill document" >&2
+    echo "3) Generate port-in request JSON (1 number)" >&2
+    echo "4) Check port-in request status (by SID)" >&2
+    echo "5) List port-in requests" >&2
+    echo "6) Exit" >&2
     echo "" >&2
 
     local choice=""
-    read -r -p "Select operation [1-5]: " choice
+    read -r -p "Select operation [1-6]: " choice
 
     case "$choice" in
       1) op_portability_check ;;
-      2) op_submit_port_in_request ;;
-      3) op_check_port_in_status ;;
-      4) op_list_port_in_requests ;;
-      5) ok "Bye."; exit 0 ;;
-      *) warn "Please choose 1-5." ;;
+      2) op_upload_document ;;
+      3) op_generate_port_in_json ;;
+      4) op_check_port_in_status ;;
+      5) op_list_port_in_requests ;;
+      6) ok "Bye."; exit 0 ;;
+      *) warn "Please choose 1-6." ;;
     esac
   done
 }
