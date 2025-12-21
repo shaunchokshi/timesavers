@@ -9,10 +9,10 @@ set -euo pipefail
 
 # --------------------------- UI helpers --------------------------------------
 
-bold() { printf "\033[1m%s\033[0m\n" "$*"; }
-warn() { printf "\033[1;33m[!]\033[0m %s\n" "$*"; }
-err()  { printf "\033[1;31m[!]\033[0m %s\n" "$*"; }
-ok()   { printf "\033[1;32m[+]\033[0m %s\n" "$*"; }
+bold() { printf "\033[1m%s\033[0m\n" "$*" >&2; }
+warn() { printf "\033[1;33m[!]\033[0m %s\n" "$*" >&2; }
+err()  { printf "\033[1;31m[!]\033[0m %s\n" "$*" >&2; }
+ok()   { printf "\033[1;32m[+]\033[0m %s\n" "$*" >&2; }
 
 confirm_yn() {
   local prompt="$1"
@@ -37,10 +37,32 @@ confirm_yn() {
 confirm_value() {
   local label="$1"
   local value="$2"
-  echo ""
+  echo "" >&2
   bold "${label}:"
-  printf "  %s\n" "$value"
+  printf "  %s\n" "$value" >&2
   confirm_yn "Confirm this is correct?" "y"
+}
+
+prompt_with_retry() {
+  local prompt="$1"
+  local label="$2"
+  local default="${3:-}"
+  local result_var="$4"
+  local value=""
+
+  while true; do
+    if [[ -n "$default" ]]; then
+      read -r -p "${prompt} [default: ${default}]: " value
+      value="${value:-$default}"
+    else
+      read -r -p "${prompt}: " value
+    fi
+
+    if confirm_value "$label" "$value"; then
+      printf -v "$result_var" "%s" "$value"
+      return 0
+    fi
+  done
 }
 
 # User preference: interactive path prompt with read -e -i
@@ -86,11 +108,11 @@ start_logging_if_needed() {
   exec > >(tee -a "$LOG_FILE") 2>&1
   LOG_STARTED=1
 
-  echo ""
+  echo "" >&2
   bold "Logging enabled"
-  echo "Log file: ${LOG_FILE}"
-  echo "Run timestamp: $(iso_ts)"
-  echo ""
+  echo "Log file: ${LOG_FILE}" >&2
+  echo "Run timestamp: $(iso_ts)" >&2
+  echo "" >&2
 }
 
 # ---------------------- Phone normalization -----------------------------------
@@ -152,11 +174,11 @@ explain_reason_code() {
   local code="$1"
   local name="${PORTABILITY_REASON_NAME[$code]:-UNKNOWN_CODE}"
   local desc="${PORTABILITY_REASON_DESC[$code]:-No description available in the local table.}"
-  echo ""
+  echo "" >&2
   bold "Portability reason code: ${code}"
-  printf "  %s\n" "$name"
-  printf "  %s\n" "$desc"
-  echo ""
+  printf "  %s\n" "$name" >&2
+  printf "  %s\n" "$desc" >&2
+  echo "" >&2
 }
 
 # ---------------------- JSON helpers ------------------------------------------
@@ -199,7 +221,7 @@ print(",".join(parts))
 ' "$input")"
 
   if ! confirm_value "notification_emails (normalized)" "$normalized"; then
-    echo ""
+    echo "" >&2
     warn "Re-enter notification emails."
     collect_notification_emails
     return
@@ -225,11 +247,11 @@ AUTH_PASS=""
 AUTH_MODE=""
 
 get_auth() {
-  echo ""
+  echo "" >&2
   bold "Authentication"
-  echo "Recommended: API Key + API Key Secret (scoped permissions)."
-  echo "Alternative: Account SID + Auth Token (global / broader permissions)."
-  echo ""
+  echo "Recommended: API Key + API Key Secret (scoped permissions)." >&2
+  echo "Alternative: Account SID + Auth Token (global / broader permissions)." >&2
+  echo "" >&2
 
   local choice=""
   while true; do
@@ -304,9 +326,9 @@ op_portability_check() {
 
   local url="https://numbers.twilio.com/v1/Porting/Portability/PhoneNumber/${encoded}?TargetAccountSid=${target_account_sid}"
 
-  echo ""
+  echo "" >&2
   bold "Request preview:"
-  printf "  GET %s\n" "$url"
+  printf "  GET %s\n" "$url" >&2
 
   confirm_yn "Send request now?" "y" || { warn "Cancelled."; return; }
 
@@ -316,9 +338,9 @@ op_portability_check() {
   local resp
   resp="$(curl_json "GET" "$url")"
 
-  echo ""
+  echo "" >&2
   bold "Response:"
-  pretty_print_json "$resp"
+  pretty_print_json "$resp" >&2
 
   local portable
   portable="$(json_get "$resp" "portable")"
@@ -346,12 +368,12 @@ upload_document_utility_bill() {
 
   local url="https://numbers-upload.twilio.com/v1/Documents"
 
-  echo ""
+  echo "" >&2
   bold "Document upload preview:"
-  printf "  POST %s\n" "$url"
-  printf "  document_type=utility_bill\n"
-  printf "  friendly_name=%s\n" "$friendly_name"
-  printf "  File=@%s\n" "$pdf_path"
+  printf "  POST %s\n" "$url" >&2
+  printf "  document_type=utility_bill\n" >&2
+  printf "  friendly_name=%s\n" "$friendly_name" >&2
+  printf "  File=@%s\n" "$pdf_path" >&2
 
   confirm_yn "Upload document now?" "y" || { warn "Cancelled."; return 1; }
 
@@ -366,16 +388,16 @@ upload_document_utility_bill() {
     -F "File=@${pdf_path}" \
     -F "document_type=utility_bill")"
 
-  echo ""
+  echo "" >&2
   bold "Upload response:"
-  pretty_print_json "$resp"
+  pretty_print_json "$resp" >&2
 
   local sid mime
   sid="$(json_get "$resp" "sid")"
   mime="$(json_get "$resp" "mime_type")"
 
   [[ -n "$sid" ]] || { err "No 'sid' returned; upload likely failed."; return 1; }
-  [[ -n "$mime" ]] || warn "mime_type is empty — per docs, this can indicate the upload had no content or failed."
+  [[ -n "$mime" ]] || warn "mime_type is empty — per docs, this can indicate the upload had no content or failed." >&2
 
   ok "Document uploaded. DocumentSid: $sid"
   printf "%s" "$sid"
@@ -408,28 +430,25 @@ op_submit_port_in_request() {
   get_auth
 
   local account_sid=""
-  read -r -p "Enter your Twilio Account SID (used in request body): " account_sid
-  confirm_value "Account SID" "$account_sid" || { warn "Cancelled."; return; }
+  prompt_with_retry "Enter your Twilio Account SID (used in request body)" "Account SID" "" account_sid
 
   local raw_phone=""
-  read -r -p "Enter US phone number to port (any format): " raw_phone
-
-  local ten
-  ten="$(normalize_us_10_digits "$raw_phone")" || { err "Invalid phone number. Need 10 digits (or 11 starting with 1)."; return; }
-
-  local e164
-  e164="$(format_e164_us "$ten")"
-  confirm_value "Normalized phone number (E.164)" "$e164" || { warn "Cancelled."; return; }
+  local ten e164
+  while true; do
+    read -r -p "Enter US phone number to port (any format): " raw_phone
+    ten="$(normalize_us_10_digits "$raw_phone")" || { err "Invalid phone number. Need 10 digits (or 11 starting with 1)."; continue; }
+    e164="$(format_e164_us "$ten")"
+    confirm_value "Normalized phone number (E.164)" "$e164" && break
+  done
 
   local pdf_path=""
-  prompt_path "Enter path to utility bill PDF: " "$(pwd)" pdf_path
-  confirm_value "Utility bill PDF path" "$pdf_path" || { warn "Cancelled."; return; }
+  while true; do
+    prompt_path "Enter path to utility bill PDF: " "$(pwd)" pdf_path
+    confirm_value "Utility bill PDF path" "$pdf_path" && break
+  done
 
   local friendly_name="phone${ten:6:4}-utility-bill-$(date +%Y-%m)"
-  local tmp=""
-  read -r -p "Enter friendly_name for document [default: ${friendly_name}]: " tmp
-  friendly_name="${tmp:-$friendly_name}"
-  confirm_value "Document friendly_name" "$friendly_name" || { warn "Cancelled."; return; }
+  prompt_with_retry "Enter friendly_name for document" "Document friendly_name" "$friendly_name" friendly_name
 
   local notification_csv
   notification_csv="$(collect_notification_emails)"
@@ -441,76 +460,70 @@ op_submit_port_in_request() {
   document_sid="$(upload_document_utility_bill "$pdf_path" "$friendly_name")" || return
 
   local pin=""
-  read -r -p "Enter losing-carrier PIN (press Enter if not required): " pin
-  if [[ -z "$pin" ]]; then
-    confirm_yn "No PIN provided. Confirm losing carrier does NOT require a PIN for port-out?" "n" || {
-      warn "Cancelled — enter the PIN and try again."
-      return
-    }
-  else
-    confirm_value "PIN" "$pin" || { warn "Cancelled."; return; }
-  fi
+  while true; do
+    read -r -p "Enter losing-carrier PIN (press Enter if not required): " pin
+    if [[ -z "$pin" ]]; then
+      if confirm_yn "No PIN provided. Confirm losing carrier does NOT require a PIN for port-out?" "n"; then
+        break
+      fi
+    else
+      confirm_value "PIN" "$pin" && break
+    fi
+  done
 
   local default_name="shaun chokshi"
-  local customer_name="$default_name"
-  read -r -p "Enter customerName (losing carrier) [default: ${default_name}]: " tmp
-  customer_name="${tmp:-$default_name}"
-  confirm_value "customerName" "$customer_name" || return
+  local customer_name=""
+  prompt_with_retry "Enter customerName (losing carrier)" "customerName" "$default_name" customer_name
 
-  local auth_rep="$customer_name"
-  read -r -p "Enter authorizedRepresentative [default: same as customerName]: " tmp
-  auth_rep="${tmp:-$customer_name}"
-  confirm_value "authorizedRepresentative" "$auth_rep" || return
+  local auth_rep=""
+  prompt_with_retry "Enter authorizedRepresentative" "authorizedRepresentative" "$customer_name" auth_rep
 
   local auth_email=""
-  read -r -p "Enter authorizedRepresentativeEmail (LOA signer email): " auth_email
-  confirm_value "authorizedRepresentativeEmail" "$auth_email" || return
+  prompt_with_retry "Enter authorizedRepresentativeEmail (LOA signer email)" "authorizedRepresentativeEmail" "" auth_email
 
   local target_date=""
-  read -r -p "Enter target port-in date (YYYY-MM-DD): " target_date
-  confirm_value "target_port_in_date" "$target_date" || return
+  prompt_with_retry "Enter target port-in date (YYYY-MM-DD)" "target_port_in_date" "" target_date
 
   local start_time=""
-  read -r -p "Enter target port-in time start (HH:MM:SS-05:00 e.g. 10:15:00-05:00): " start_time
-  confirm_value "target_port_in_time_range_start" "$start_time" || return
+  prompt_with_retry "Enter target port-in time start (HH:MM:SS-05:00 e.g. 10:15:00-05:00)" "target_port_in_time_range_start" "" start_time
 
-  local duration_hours="24"
-  read -r -p "Enter time range duration hours [default: 24]: " tmp
-  duration_hours="${tmp:-24}"
-  confirm_value "Duration (hours)" "$duration_hours" || return
+  local duration_hours=""
+  prompt_with_retry "Enter time range duration hours" "Duration (hours)" "24" duration_hours
 
   local end_time=""
-  end_time="$(compute_end_time_from_start_and_hours "$start_time" "$duration_hours")" || true
-  [[ -n "$end_time" ]] || { err "Could not compute end time. Ensure start time is like HH:MM:SS-05:00"; return; }
-  confirm_value "target_port_in_time_range_end (computed)" "$end_time" || return
+  while true; do
+    end_time="$(compute_end_time_from_start_and_hours "$start_time" "$duration_hours")" || true
+    if [[ -z "$end_time" ]]; then
+      err "Could not compute end time. Ensure start time is like HH:MM:SS-05:00"
+      prompt_with_retry "Enter target port-in time start (HH:MM:SS-05:00 e.g. 10:15:00-05:00)" "target_port_in_time_range_start" "" start_time
+    else
+      confirm_value "target_port_in_time_range_end (computed)" "$end_time" && break
+      err "Re-enter time parameters"
+      prompt_with_retry "Enter target port-in time start (HH:MM:SS-05:00 e.g. 10:15:00-05:00)" "target_port_in_time_range_start" "" start_time
+      prompt_with_retry "Enter time range duration hours" "Duration (hours)" "24" duration_hours
+    fi
+  done
 
-  echo ""
+  echo "" >&2
   bold "Losing carrier service address (as on bill / account)"
   local street city state zip country
-  read -r -p "Street: " street
-  confirm_value "Street" "$street" || return
-  read -r -p "City: " city
-  confirm_value "City" "$city" || return
-  read -r -p "State (2 letters): " state
-  confirm_value "State" "$state" || return
-  read -r -p "ZIP: " zip
-  confirm_value "ZIP" "$zip" || return
+  prompt_with_retry "Street" "Street" "" street
+  prompt_with_retry "City" "City" "" city
+  prompt_with_retry "State (2 letters)" "State" "" state
+  prompt_with_retry "ZIP" "ZIP" "" zip
   country="US"
-  confirm_value "Country" "$country" || return
+  while true; do
+    confirm_value "Country" "$country" && break
+  done
 
   local account_number=""
-  read -r -p "Losing carrier account number: " account_number
-  confirm_value "account_number" "$account_number" || return
+  prompt_with_retry "Losing carrier account number" "account_number" "" account_number
 
-  local atn="$e164"
-  read -r -p "Account telephone number (ATN) [default: ${e164}]: " tmp
-  atn="${tmp:-$e164}"
-  confirm_value "account_telephone_number" "$atn" || return
+  local atn=""
+  prompt_with_retry "Account telephone number (ATN)" "account_telephone_number" "$e164" atn
 
-  local customer_type="Business"
-  read -r -p "Customer type [Business/Residential] (default: Business): " tmp
-  customer_type="${tmp:-Business}"
-  confirm_value "customer_type" "$customer_type" || return
+  local customer_type=""
+  prompt_with_retry "Customer type [Business/Residential]" "customer_type" "Business" customer_type
 
   # Build JSON payload (no heredoc; safer)
   local payload
@@ -572,14 +585,14 @@ print(json.dumps(obj, indent=2))
 "$customer_type" "$customer_name" "$account_number" "$atn" "$auth_rep" "$auth_email" \
 "$street" "$city" "$state" "$zip" "$country" "$notification_json")"
 
-  echo ""
+  echo "" >&2
   bold "Port-In Request JSON Preview:"
-  printf "%s\n" "$payload"
+  printf "%s\n" "$payload" >&2
 
   local url="https://numbers.twilio.com/v1/Porting/PortIn"
-  echo ""
+  echo "" >&2
   bold "Request preview:"
-  printf "  POST %s\n" "$url"
+  printf "  POST %s\n" "$url" >&2
 
   confirm_yn "Send port-in request now?" "y" || { warn "Cancelled."; return; }
 
@@ -589,9 +602,9 @@ print(json.dumps(obj, indent=2))
   local resp
   resp="$(curl_json "POST" "$url" "$payload")"
 
-  echo ""
+  echo "" >&2
   bold "Response:"
-  pretty_print_json "$resp"
+  pretty_print_json "$resp" >&2
 
   local port_in_sid
   port_in_sid="$(json_get "$resp" "sid")"
@@ -610,9 +623,9 @@ op_list_port_in_requests() {
   confirm_value "Size" "$size" || return
 
   local url="https://numbers.twilio.com/v1/Porting/PortIn/PortInRequests?Size=${size}"
-  echo ""
+  echo "" >&2
   bold "Request preview:"
-  printf "  GET %s\n" "$url"
+  printf "  GET %s\n" "$url" >&2
 
   confirm_yn "Send request now?" "y" || { warn "Cancelled."; return; }
   start_logging_if_needed
@@ -620,9 +633,9 @@ op_list_port_in_requests() {
   local resp
   resp="$(curl_json "GET" "$url")"
 
-  echo ""
+  echo "" >&2
   bold "Response:"
-  pretty_print_json "$resp"
+  pretty_print_json "$resp" >&2
 }
 
 op_check_port_in_status() {
@@ -634,9 +647,9 @@ op_check_port_in_status() {
   confirm_value "PortInRequestSid" "$sid" || return
 
   local url="https://numbers.twilio.com/v1/Porting/PortIn/PortInRequests?PortInRequestSid=${sid}&Size=20"
-  echo ""
+  echo "" >&2
   bold "Request preview:"
-  printf "  GET %s\n" "$url"
+  printf "  GET %s\n" "$url" >&2
 
   confirm_yn "Send request now?" "y" || { warn "Cancelled."; return; }
   start_logging_if_needed
@@ -644,23 +657,23 @@ op_check_port_in_status() {
   local resp
   resp="$(curl_json "GET" "$url")"
 
-  echo ""
+  echo "" >&2
   bold "Response:"
-  pretty_print_json "$resp"
+  pretty_print_json "$resp" >&2
 }
 
 # ---------------------- Main menu ---------------------------------------------
 
 main_menu() {
   while true; do
-    echo ""
+    echo "" >&2
     bold "Twilio Porting CLI"
-    echo "1) Check a number for portability"
-    echo "2) Submit a port-in request (1 number)"
-    echo "3) Check port-in request status (by SID)"
-    echo "4) List port-in requests"
-    echo "5) Exit"
-    echo ""
+    echo "1) Check a number for portability" >&2
+    echo "2) Submit a port-in request (1 number)" >&2
+    echo "3) Check port-in request status (by SID)" >&2
+    echo "4) List port-in requests" >&2
+    echo "5) Exit" >&2
+    echo "" >&2
 
     local choice=""
     read -r -p "Select operation [1-5]: " choice
