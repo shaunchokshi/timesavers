@@ -1,0 +1,138 @@
+#cloud-config
+#
+# Adds SSH keys for root + a standard user, installs WireGuard, generates keys,
+# builds wg0.conf, moves SSH to port 2522 via systemd socket override, enforces
+# key-only auth, and allows SSH tunneling ONLY when the connection is via the
+# WireGuard local IP (Match LocalAddress).
+#
+# Replace ALL <<PLACEHOLDERS>> before provisioning.
+
+package_update: true
+package_upgrade: false
+packages:
+  - wireguard
+  - wireguard-tools
+  - openssh-server
+
+users:
+  - name: root
+    ssh_authorized_keys:
+      - "<<ROOT_SSH_PUBKEY_1>>"
+      # - "<<ROOT_SSH_PUBKEY_2>>"
+    shell: /bin/bash
+
+  - name: <<STANDARD_USERNAME>>
+    gecos: "<<STANDARD_USERNAME>>"
+    groups: [sudo]
+    shell: /bin/bash
+    lock_passwd: true
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys:
+      - "<<USER_SSH_PUBKEY_1>>"
+      # - "<<USER_SSH_PUBKEY_2>>"
+
+write_files:
+  # --- .bashrc placeholders ---------------------------------------------------
+  - path: /root/.bashrc
+    permissions: "0644"
+    owner: root:root
+    content: |
+      # Root .bashrc
+      export HISTCONTROL=ignoredups:erasedups
+      export PROMPT_COMMAND='history -a; history -c; history -r; '"$PROMPT_COMMAND"
+      alias ll='ls -alF'; alias la='ls -A'; alias l='ls -CF'
+      # BEGIN USER CONTENT:
+      <<ROOT_BASHRC_CONTENT>>
+      # END USER CONTENT
+
+  - path: /home/<<STANDARD_USERNAME>>/.bashrc
+    permissions: "0644"
+    owner: <<STANDARD_USERNAME>>:<<STANDARD_USERNAME>>
+    content: |
+      # User .bashrc
+      export HISTCONTROL=ignoredups:erasedups
+      export PROMPT_COMMAND='history -a; history -c; history -r; '"$PROMPT_COMMAND"
+      alias ll='ls -alF'; alias la='ls -A'; alias l='ls -CF'
+      # BEGIN USER CONTENT:
+      <<USER_BASHRC_CONTENT>>
+      # END USER CONTENT
+
+  # --- systemd socket override (Ubuntu 22.10+ socket activation) --------------
+  # Disable port 22 listener and rebind SSH to 2522.
+  - path: /etc/systemd/system/ssh.socket.d/listen.conf
+    permissions: "0644"
+    owner: root:root
+    content: |
+      [Socket]
+      ListenStream=
+      ListenStream=2522
+
+  # --- sshd config drop-in (cloud-safe; don't touch the vendor file) ----------
+  # Enforce key-only auth globally; no passwords; no keyboard-interactive.
+  # Disallow TCP forwarding by default, then selectively allow when the local
+  # listening address is the WG IP (<<WG_LOCAL_IP>>).
+  - path: /etc/ssh/sshd_config.d/99-cloud-init.conf
+    permissions: "0644"
+    owner: root:root
+    content: |
+      # Global hardening
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      ChallengeResponseAuthentication no
+      PubkeyAuthentication yes
+      UsePAM yes
+      PermitRootLogin prohibit-password
+
+      # By default, no TCP forwarding/tunneling
+      AllowTcpForwarding no
+      PermitTunnel no
+      X11Forwarding no
+      AllowAgentForwarding yes
+
+      # When the incoming connection is TERMINATED on this host's WireGuard IP,
+      # allow SSH tunneling/forwarding. Replace with your local WG IP (no CIDR).
+      Match LocalAddress <<WG_LOCAL_IP>>
+        AllowTcpForwarding yes
+        PermitTunnel yes
+        # PermitOpen defaults to "any" when forwarding is enabled.
+        # GatewayPorts defaults to "no" (safer); change if you truly need remote binds.
+
+runcmd:
+  # --- WireGuard keypair + config --------------------------------------------
+  - [ bash, -lc, "umask 077; mkdir -p /etc/wireguard" ]
+  - [ bash, -lc, "if [ ! -s /etc/wireguard/privatekey ]; then wg genkey | tee /etc/wireguard/privatekey | wg pubkey > /etc/wireguard/publickey; fi" ]
+  - [ bash, -lc, "chmod 600 /etc/wireguard/privatekey && chmod 644 /etc/wireguard/publickey" ]
+  - |
+    bash -lc 'cat > /etc/wireguard/wg0.conf <<EOF
+    [Interface]
+    Address = <<WG_ADDRESS_CIDR>>          # e.g., 10.8.0.2/32
+    DNS = <<WG_DNS>>                       # e.g., 1.1.1.1, 9.9.9.9  (or remove)
+    ListenPort = <<WG_LISTEN_PORT>>        # e.g., 51820
+    PrivateKey = $(cat /etc/wireguard/privatekey)
+
+    # Optional NAT (uncomment and set EGRESS_IFACE to enable)
+    #PostUp = iptables -t nat -A POSTROUTING -o <<EGRESS_IFACE>> -j MASQUERADE
+    #PostDown = iptables -t nat -D POSTROUTING -o <<EGRESS_IFACE>> -j MASQUERADE
+
+    [Peer]
+    PublicKey = <<WG_PEER_PUBLIC_KEY>>
+    AllowedIPs = <<WG_ALLOWED_IPS>>        # e.g., 0.0.0.0/0, ::/0 or just your WG subnet
+    Endpoint = <<WG_PEER_ENDPOINT_HOST_OR_IP>>:<<WG_PEER_ENDPOINT_PORT>>
+    PersistentKeepalive = 25
+    EOF'
+  - [ bash, -lc, "chmod 600 /etc/wireguard/wg0.conf" ]
+
+  # Optional: enable IP forwarding if routing through this node
+  - [ bash, -lc, "sysctl -w net.ipv4.ip_forward=1" ]
+  - [ bash, -lc, "sysctl -w net.ipv6.conf.all.forwarding=1" ]
+
+  # Bring up WireGuard and enable at boot
+  - [ systemctl, enable, --now, "wg-quick@wg0" ]
+
+  # --- Apply SSH socket override + restart socket -----------------------------
+  - [ bash, -lc, "systemctl daemon-reload" ]
+  - [ bash, -lc, "systemctl restart ssh.socket" ]
+  # Optional: verify the active listen (journald emits a line; harmless if skipped)
+  - [ bash, -lc, "ss -tlpn | grep ':2522 ' || true" ]
+
+final_message: "Cloud-init completed: WG keys/config, SSH moved to :2522 via socket activation, key-only auth enforced, and WG-gated SSH tunneling enabled."
