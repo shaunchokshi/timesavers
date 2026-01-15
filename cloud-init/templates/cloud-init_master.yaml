@@ -1,0 +1,281 @@
+#cloud-config
+#
+# MASTER TEMPLATE (safe to paste/upload)
+# Placeholders look like <<${VAR}>> and MUST be rendered locally before use.
+#
+
+hostname: "<<${HOSTNAME}>>"
+fqdn: "<<${HOSTNAME}>>"
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - openssh-server
+  - curl
+  - wget
+  - git
+  - net-tools
+  - zsh
+  - wireguard
+  - wireguard-tools
+  - ca-certificates
+  - gnupg
+  - unzip
+  - cifs-utils
+  - nfs-common
+  - nfs-kernel-server
+  - eza
+  - bat
+  - htop
+  - pwgen
+  - python3-pygments
+
+users:
+  - name: root
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - "<<${ROOT_SSH_PUBKEY_1}>>"
+      # - "<<${ROOT_SSH_PUBKEY_2}>>"
+
+  - name: "<<${STANDARD_USERNAME}>>"
+    gecos: "<<${STANDARD_USERNAME}>>"
+    groups: [sudo]
+    shell: /bin/bash
+    lock_passwd: true
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys:
+      - "<<${USER_SSH_PUBKEY_1}>>"
+      # - "<<${USER_SSH_PUBKEY_2}>>"
+
+write_files:
+  # --- .bashrc placeholders ---------------------------------------------------
+  - path: /root/.bashrc
+    permissions: "0644"
+    owner: root:root
+    content: |
+      # Root .bashrc
+      export HISTCONTROL=ignoredups:erasedups
+      alias ll='ls -alF'
+      # BEGIN USER CONTENT:
+      <<${ROOT_BASHRC_CONTENT}>>
+      # END USER CONTENT
+
+  - path: /home/<<${STANDARD_USERNAME}>>/.bashrc
+    permissions: "0644"
+    owner: <<${STANDARD_USERNAME}>>:<<${STANDARD_USERNAME}>>
+    content: |
+      # User .bashrc
+      export HISTCONTROL=ignoredups:erasedups
+      alias ll='ls -alF'
+      # BEGIN USER CONTENT:
+      <<${USER_BASHRC_CONTENT}>>
+      # END USER CONTENT
+
+  # --- systemd socket override: move ssh off 22 -> 2522 -----------------------
+  - path: /etc/systemd/system/ssh.socket.d/listen.conf
+    permissions: "0644"
+    owner: root:root
+    content: |
+      [Socket]
+      ListenStream=
+      ListenStream=2522
+
+  # --- sshd drop-in hardening + WG-gated forwarding ---------------------------
+  - path: /etc/ssh/sshd_config.d/99-cloud-init.conf
+    permissions: "0644"
+    owner: root:root
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      ChallengeResponseAuthentication no
+      PubkeyAuthentication yes
+      UsePAM yes
+      PermitRootLogin prohibit-password
+
+      # Default: no tunneling/forwarding
+      AllowTcpForwarding no
+      PermitTunnel no
+      X11Forwarding no
+      AllowAgentForwarding yes
+
+      # Allow forwarding ONLY if connection terminates on WireGuard IP
+      Match LocalAddress <<${WG_LOCAL_IP}>>
+        AllowTcpForwarding yes
+        PermitTunnel yes
+
+  # --- store a local .env template on the box (optional convenience) ----------
+  - path: /opt/bootstrap/.env-template
+    permissions: "0644"
+    owner: root:root
+    content: |
+      # This file is informational: cloud-init does not source it.
+      # It mirrors your local env-template structure.
+      STANDARD_USERNAME=<<${STANDARD_USERNAME}>>
+      ROOT_SSH_PUBKEY_1=<<${ROOT_SSH_PUBKEY_1}>>
+      USER_SSH_PUBKEY_1=<<${USER_SSH_PUBKEY_1}>>
+      WG_ADDRESS_CIDR=<<${WG_ADDRESS_CIDR}>>
+      WG_LOCAL_IP=<<${WG_LOCAL_IP}>>
+      WG_LISTEN_PORT=<<${WG_LISTEN_PORT}>>
+      WG_PEER_PUBLIC_KEY=<<${WG_PEER_PUBLIC_KEY}>>
+      WG_PEER_ENDPOINT_HOST_OR_IP=<<${WG_PEER_ENDPOINT_HOST_OR_IP}>>
+      WG_PEER_ENDPOINT_PORT=<<${WG_PEER_ENDPOINT_PORT}>>
+      WG_ALLOWED_IPS=<<${WG_ALLOWED_IPS}>>
+
+  # --- fontconfig default monospace -> SpaceMonoNerdFontMono ------------------
+  - path: /etc/fonts/local.conf
+    permissions: "0644"
+    owner: root:root
+    content: |
+      <?xml version="1.0"?>
+      <!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+      <fontconfig>
+        <alias>
+          <family>monospace</family>
+          <prefer>
+            <family>SpaceMonoNerdFontMono</family>
+          </prefer>
+        </alias>
+      </fontconfig>
+
+  # BEGIN_STORBOX
+  # --- Hetzner Storage Box CIFS credentials file ------------------------------
+  - path: /root/.secrets/smb-STORBOX-<<${STORBOX_MAIN}>>
+    permissions: "0600"
+    owner: root:root
+    content: |
+      username=<<${STORBOX_SUBACCT}>>
+      password=<<${STORBOX_SUBACCT_PASSWORD}>>
+  # END_STORBOX
+
+runcmd:
+  # --- tiny helper: make secrets dir + base mount dir -------------------------
+  - [ bash, -lc, "mkdir -p /root/.secrets && chmod 700 /root/.secrets" ]
+  - [ bash, -lc, "mkdir -p /mnt/STORBOX" ]
+
+  # --- install GitHub CLI (gh) from official repo -----------------------------
+  - |
+    bash -lc '
+      set -euo pipefail
+      if ! command -v gh >/dev/null 2>&1; then
+        mkdir -p /etc/apt/keyrings
+        curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+          | dd of=/etc/apt/keyrings/githubcli-archive-keyring.gpg
+        chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+          > /etc/apt/sources.list.d/github-cli.list
+        apt-get update -y
+        apt-get install -y gh
+      fi
+    '
+
+  # --- try secpwgen; fall back is pwgen (already installed) -------------------
+  - |
+    bash -lc '
+      set -euo pipefail
+      apt-get update -y
+      apt-get install -y secpwgen || true
+    '
+
+  # --- terminfo: ghostty + kitty ---------------------------------------------
+  - |
+    bash -lc '
+      set -euo pipefail
+      tmpdir="$(mktemp -d)"
+      cd "$tmpdir"
+      curl -fsSLo xterm-ghostty https://github.com/shaunchokshi/timesavers/raw/refs/heads/main/xterm-ghostty
+      curl -fsSLo xterm-kitty   https://github.com/shaunchokshi/timesavers/raw/refs/heads/main/xterm-kitty
+      tic -x xterm-ghostty
+      tic -x xterm-kitty
+      rm -rf "$tmpdir"
+    '
+
+  # --- WireGuard keys + wg0.conf ---------------------------------------------
+  - [ bash, -lc, "umask 077; mkdir -p /etc/wireguard" ]
+  - [ bash, -lc, "if [ ! -s /etc/wireguard/privatekey ]; then wg genkey | tee /etc/wireguard/privatekey | wg pubkey > /etc/wireguard/publickey; fi" ]
+  - [ bash, -lc, "chmod 600 /etc/wireguard/privatekey && chmod 644 /etc/wireguard/publickey" ]
+  - |
+    bash -lc 'cat > /etc/wireguard/wg0.conf <<EOF
+    [Interface]
+    Address = <<${WG_ADDRESS_CIDR}>>
+    ListenPort = <<${WG_LISTEN_PORT}>>
+    PrivateKey = $(cat /etc/wireguard/privatekey)
+
+    [Peer]
+    PublicKey = <<${WG_PEER_PUBLIC_KEY}>>
+    AllowedIPs = <<${WG_ALLOWED_IPS}>>
+    Endpoint = <<${WG_PEER_ENDPOINT_HOST_OR_IP}>>:<<${WG_PEER_ENDPOINT_PORT}>>
+    PersistentKeepalive = 25
+    EOF'
+  - [ bash, -lc, "chmod 600 /etc/wireguard/wg0.conf" ]
+  - [ bash, -lc, "sysctl -w net.ipv4.ip_forward=1" ]
+  - [ bash, -lc, "sysctl -w net.ipv6.conf.all.forwarding=1" ]
+  - [ systemctl, enable, --now, "wg-quick@wg0" ]
+
+  # --- Timesavers repo + zsh wiring for root + STANDARD_USERNAME -------------
+  - |
+    bash -lc '
+      set -euo pipefail
+
+      setup_timesavers_for_user() {
+        local user="$1"
+        local home
+        home="$(getent passwd "$user" | cut -d: -f6)"
+        local proj="${home}/devspace/myprojects"
+
+        mkdir -p "${proj}"
+        if [ ! -d "${proj}/timesavers/.git" ]; then
+          sudo -u "$user" git clone https://github.com/shaunchokshi/timesavers.git "${proj}/timesavers"
+        fi
+
+        # Hardlink-based mirror of zsh config
+        cp -lr "${proj}/timesavers/cloud-init/zsh-custom" "${home}/.zsh-custom"
+        ln -sf "${proj}/timesavers/cloud-init/zshrc" "${home}/.zshrc"
+        ln -snf "${proj}/timesavers" "${home}/timesavers"
+        chown -R "${user}:${user}" "${home}/.zsh-custom" "${home}/.zshrc" "${home}/timesavers"
+      }
+
+      # Oh-my-zsh via standard curl installer, per user
+      install_omz_for_user() {
+        local user="$1"
+        local home
+        home="$(getent passwd "$user" | cut -d: -f6)"
+        sudo -u "$user" sh -c "RUNZSH=no CHSH=no KEEP_ZSHRC=yes \
+          $(command -v curl) -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh | sh"
+        chsh -s /usr/bin/zsh "$user" || true
+      }
+
+      install_omz_for_user root
+      install_omz_for_user "<<${STANDARD_USERNAME}>>"
+
+      setup_timesavers_for_user root
+      setup_timesavers_for_user "<<${STANDARD_USERNAME}>>"
+
+      # Fonts from timesavers (use root clone path)
+      ROOT_HOME="/root"
+      FONT_SRC="${ROOT_HOME}/devspace/myprojects/timesavers/cloud-init"
+      install -d /usr/share/fonts/truetype
+      cp "${FONT_SRC}"/SpaceMonoNerdFontMono-*.ttf /usr/share/fonts/truetype/ || true
+      fc-cache -f
+    '
+
+  # --- apply SSH socket override ---------------------------------------------
+  - [ bash, -lc, "systemctl daemon-reload" ]
+  - [ bash, -lc, "systemctl restart ssh.socket" ]
+  - [ bash, -lc, "ss -tlpn | grep ':2522 ' || true" ]
+
+  # BEGIN_STORBOX_FSTAB
+  # --- Hetzner Storage Box fstab entry ---------------------------------------
+  - |
+    bash -lc 'cat >> /etc/fstab <<EOF
+    # hetzner storage box <<${STORBOX_MAIN}>> with sub account <<${STORBOX_SUBACCT>>;
+    # it will be accessible via <<${STORBOX_SUBURI}>> and the credentials
+    # will need to be copied from \$HOME/.secrets/smb-STORBOX-<<${SSH_TAG}>>
+
+    //<<${STORBOX_SUBURI}>> /mnt/STORBOX/<<${STORBOX_MAIN}>> cifs credentials=/root/.secrets/smb-STORBOX-<<${STORBOX_MAIN}>>,uid=1000,gid=1000,iocharset=utf8,file_mode=0777,dir_mode=0777,_netdev,noserverino 0 0
+    EOF'
+  - [ bash, -lc, "mkdir -p /mnt/STORBOX/<<${STORBOX_MAIN}>>" ]
+  - [ bash, -lc, "mount -a || true" ]
+  # END_STORBOX_FSTAB
+
+final_message: "Provisioned: SSH on 2522 (socket activation), key-only auth, WG-gated forwarding, zsh+oh-my-zsh+timesavers+starship-ready, gh/git, CIFS/NFS, eza/bat/htop, terminfo, fonts, optional Hetzner Storage Box."

@@ -1,0 +1,42 @@
+# Per-host cloud-init render inputs (fill these in)
+
+# Core identity
+STANDARD_USERNAME=changeme_user
+SSH_TAG=changeme_tag          # will usually be auto-appended by 00_init_host.sh
+HOSTNAME=changeme-hostname    # also auto-appended, but editable
+
+# SSH public keys
+ROOT_SSH_PUBKEY_1=changeme_root_pubkey
+USER_SSH_PUBKEY_1=changeme_user_pubkey
+
+# WireGuard local side
+WG_ADDRESS_CIDR=10.8.0.2/32
+WG_LOCAL_IP=10.8.0.2
+WG_LISTEN_PORT=51820
+
+# WireGuard remote peer
+WG_PEER_PUBLIC_KEY=changeme_peer_pubkey
+WG_PEER_ENDPOINT_HOST_OR_IP=vpn.example.com
+WG_PEER_ENDPOINT_PORT=51820
+WG_ALLOWED_IPS=0.0.0.0/0, ::/0
+
+# Optional bashrc payloads (simple one-liners recommended; or you can inject
+# heredoc-like content but mind YAML quoting when you do)
+ROOT_BASHRC_CONTENT=
+USER_BASHRC_CONTENT=
+
+# Hetzner Storage Box usage toggle:
+#   true / yes / 1 => enable storbox fstab + credentials
+#   false / no / 0 / empty => strip storbox config from cloud-init
+USE_STORBOX=false
+
+# Hetzner Storage Box parameters (only used if USE_STORBOX=true)
+# Example semantics:
+#   STORBOX_MAIN=h0
+#   STORBOX_SUBACCT=u527940-sub1
+#   STORBOX_SUBACCT_PASSWORD=supersecret
+#   STORBOX_SUBURI=u527940-sub1.your-storagebox.de/u527940-sub1
+STORBOX_MAIN=
+STORBOX_SUBACCT=
+STORBOX_SUBACCT_PASSWORD=
+STORBOX_SUBURI=

@@ -1,0 +1,288 @@
+#cloud-config
+#
+# Adds SSH keys for root + a standard user, installs WireGuard, generates keys,
+# builds wg0.conf, moves SSH to port 2522 via systemd socket override, enforces
+# key-only auth, and allows SSH tunneling ONLY when the connection is via the
+# WireGuard local IP (Match LocalAddress).
+#
+# Replace ALL <<PLACEHOLDERS>> before provisioning.
+
+
+### prompt on 2026-01-08:
+
+yes i want want the “master script” to also prompt for metadata fields (provider, costing, depl_mode, notes) and inject those into a comment block at the top of the rendered cloud-init; and also we need to work out a few more things so that the cloud-init does the following additional things:
+- install CIFS/SMB client packages, install NFS client and server packages, eza, bat/batcat, htop,secpwgen (or pwgen if the first choice is not available), pygmentize
+- add a CIFS share to /etc/fstab with comment that it is "hetzner storage box ${STORBOX_MAIN} with sub account ${STORBOX_SUBACCT}; it will be accessible via ${STORBOX_SUBURI} and the credentials will  need to be copied from $HOME/.secrets/smb-STORBOX-${TGT_SSH_TAG}. the main script will need to prompt the user to indicate whether to add storage box info or not. 
+    -- the entry in fstab should look something like: //u527940-sub1.your-storagebox.de/u527940-sub1/ /mnt/STORBOX/h0 cifs credentials=/root/.secrets/smb-STORBOX-h0,uid=1000,gid=1000,iocharset=utf8,file_mode=0777,dir_mode=0777,_netdev,noserverino 0 0
+    -- the smb-STORBOX-h0 file will have to be assembled from env vars: 
+        ```
+         username=${STORBOX_SUBACCT}
+         password=${STORBOX_SUBACCT_PASSWORD}
+        ```
+- clone the timesavers repo (https://github.com/shaunchokshi/timesavers.git) to $HOME/devspace/myprojects (create the dirs and then clone of course)
+    -- link (hard links where possible for direct files, and for entire directiories/sub-directories use "cp -lr ... " to create a mirrored dir structure with the contents then being hard linked):
+        ---  ```cp -lr $HOME/devspace/myprojects/timesavers/cloud-init/zsh-custom $HOME/.zsh-custom```
+        ---  ```ln $HOME/devspace/myprojects/timesavers/cloud-init/zshrc $HOME/.zshrc```
+        ---  ```ln -s $HOME/devspace/myprojects/timesavers $HOME```
+    -- install oh-my-zsh via [ sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" ]
+    -- copy font files ```cp ...timesavers/cloud-init/SpaceMonoNerdFontMono-* /usr/share/fonts/truetype```
+        --- change whatever setting needs to be changed so that the default font family is SpaceMonoNerdFontMono (the files are: SpaceMonoNerdFontMono-Bold.ttf, SpaceMonoNerdFontMono-BoldItalic.ttf, SpaceMonoNerdFontMono-Italic.ttf, SpaceMonoNerdFontMono-Regular.ttf)
+
+please update the env-template and cloud-init master template files as needed
+
+### prompt 2026-01-06:
+i want to significantly revise my approach to this so that it is more robust and modular.
+first, rather than starting with a cloud-config static  file template only, let's set up a mechanism to partially automate things with the following intent:
+- we should have a static/template "master" cloud-init file that looks like what will be pasted / uploaded to the VPS provider but with host and user-specific/sensitive info masked as placeholder variables (i.e. "<<${ROOT_SSH_KEY_1}>>" (this way, if someone is unable to run the automated version of it, they can at least manually set up a deployment file; I am not sure if the cloud-config file spec allows it to have variables that can be sourced via an .env file so I am designing this based on the assumption that it cannot)
+-  a master script that prompts the user to provide basic info (hostname, "SSH_TAG" value, VPS/service provider, location of data center--optional, "MAIN_USE" value, user/admin account on provider's site/control plane--optional, project / " hierarchical " position identifier--optional but HIGHLY encouraged, "COSTING" value--internal/ external/ other, "DEPL_MODE" value--'Trial/Demo' or 'testing' or 'dev' or 'Prod', Notes--optional but HIGHLY encouraged)
+- a per-user global ignore for [*.key, .env, and .env.*] ( this will let you have various templates for .env-* .env_* or even .envwhyisthisnameso...) in $HOME/.gitignore, a 
+.git-config file e.g.:
+```
+[user]
+	email = shaunchokshi-gh@proton.me
+	name = "shaun-${TGT_SSH_TAG}"
+	signingkey = <<PLACEHOLDER>>
+[commit]
+	gpgsign = true
+[credential "https://github.com"]
+	helper =
+	helper = !/usr/bin/gh auth git-credential
+[credential "https://gist.github.com"]
+	helper =
+	helper = !/usr/bin/gh auth git-credential
+[filter "lfs"]
+	process = git-lfs filter-process
+	required = true
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+[credential]
+	helper = store
+[core]
+	excludesfile = "${HOME}/.gitignore"
+[gpg]
+	program = gpg2
+[credential]
+	helper = cache --timeout=2592000
+[pull]
+	rebase = true
+[color]
+	staus = always
+```
+.git-credentials file e.g.:
+```
+https://shaunchokshi:[token]@github.com
+```
+
+
+could you please update the cloud-init template to also:
+- install curl, wget, github-cli, git, net-tools, install zsh, oh-my-zsh, and starship prompt
+- install the terminfo for ghostty and kitty from https://github.com/shaunchokshi/timesavers/raw/refs/heads/main/xterm-ghostty and https://github.com/shaunchokshi/timesavers/raw/refs/heads/main/xterm-kitty
+- create the .env-template file
+- create subscripts (individual ones) to handle populating the TGT_CLOUDINIT_FILE
+
+script for no-password ssh keys:
+```
+#!/bin/bash
+BOLD="\e[1m"
+GREEN="\e[32m"
+RED="\e[31m"
+YELLOW="\e[33m"
+RESET="\e[0m"
+
+DTG=(`date -u '+%Y-%m-%d_%H%M%S'`)
+TGT_SSH_TAG="CHANGEME"
+WORKDIR="${HOME}/devspace/myprojects/portable-configs/cloud-init"
+TEMPLATES="${HOME}/devspace/myprojects/timesavers/cloud-init"
+
+read -e -i "${TGT_SSH_TAG}" -p "Enter the SSH_TAG label for the target host: " TGT_SSH_TAG
+TGT_WORKDIR="${WORKDIR}/${TGT_SSH_TAG}"
+TGT_ENV="${TGT_WORKDIR}/.env.${TGT_SSH_TAG}"
+KEY_FILENAME="${TGT_SSH_TAG}.${DTG}"
+KEY_FILEPATH="${TGT_WORKDIR}/${KEY_FILENAME}"
+REALRUN_LOGFILE="${TGT_WORKDIR}/${KEY_FILENAME}.log"
+DRYRUN_LOGFILE="${TGT_WORKDIR}/${KEY_FILENAME}.dry.log"
+KEY_OPTS='-q -t ed25519 -C "${TGT_SSH_TAG}.${DTG}" -N ""'
+USER_SECRETS_PATH="${HOME}/.secrets"
+TGT_CLOUDINIT_FILE="${WORKDIR}/${TGT_SSH_TAG}/cloudinit.${TGT_SSH_TAG}"
+
+
+makeenv() {
+mkdir -p "${TGT_WORKDIR}"
+cat "${TEMPLATES}/.env-template" >> "${TGT_ENV}"
+}
+
+dryrun() {
+#set -o allexport,errexit,ignoreeof,noclobber,nolog,noexec,verbose
+set -aexCnv
+  < /dev/zero ssh-keygen -f "${KEY_FILEPATH}" | tee -a "${DRYRUN_LOGFILE}"
+echo 'moving "${KEY_FILEPATH}" to "${USER_SECRETS_PATH}/${KEY_FILENAME}.key"' | tee -a "${DRYRUN_LOGFILE}"
+mv -f "${KEY_FILEPATH}" "${USER_SECRETS_PATH}/${KEY_FILENAME}.key"
+unset
+}
+
+
+realrun() {
+#set -o allexport,errexit,ignoreeof,noclobber,nolog,nounset,verbose
+set -aexCvu
+  < /dev/zero ssh-keygen -f "${WORKDIR}/${FILENAME}" | tee -a "${REALRUN_LOGFILE}"
+echo 'moving "${KEY_FILEPATH}" to "${USER_SECRETS_PATH}/${KEY_FILENAME}.key"' | tee -a "${REALRUN_LOGFILE}"
+mv -f "${KEY_FILEPATH}" "${USER_SECRETS_PATH}/${KEY_FILENAME}.key"
+}
+
+
+if [ ! -e "${TGT_ENV}" ]; then
+    makeenv
+    echo 'file "${TEMPLATES}/.env-template" copied to "${TGT_ENV}"'
+    echo "please fill out ${TGT_ENV} and then run the script again"
+    exit 1
+else
+    source "${TGT_ENV}"
+
+    if ! dryrun; then
+        echo command "$?" | tee -a "${LOGFILE}"
+        exit 1
+    else
+        echo "${DTG} no error in dry run, doing real run and removing ${DRYRUN_LOGFILE}" | tee -a "${REALRUN_LOGFILE}"
+        realrun
+        echo "TGT_SSH_PUBKEY='" >>  "${TGT_CLOUDINIT_FILE}"
+        cat "${KEY_FILEPATH}.pub" >> "${TGT_CLOUDINIT_FILE}"
+        echo "'" >>  "${TGT_CLOUDINIT_FILE}"
+        echo "" >>  "${TGT_CLOUDINIT_FILE}"
+        echo "${DTG} copied ${KEY_FILEPATH}.pub contents to ${TGT_CLOUDINIT_FILE}" | tee -a "${REALRUN_LOGFILE}"
+        rm -fv "${DRYRUN_LOGFILE}"
+        echo "${DTG} done"
+        exit 0
+    fi
+fi
+
+```
+
+package_update: true
+package_upgrade: false
+packages:
+  - wireguard
+  - wireguard-tools
+  - openssh-server
+
+users:
+  - name: root
+    ssh_authorized_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILdhAVCtJUyOeADuJiBd81cHgJ2sG+C0fDdYpaSi34Xh shaun@DZ7r"
+      # - "<<ROOT_SSH_PUBKEY_2>>"
+    shell: /bin/bash
+
+  - name: "shaun"
+    gecos: "shaun"
+    groups: [sudo]
+    shell: /bin/bash
+    lock_passwd: true
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys:
+      - "<<USER_SSH_PUBKEY_1>>"
+      # - "<<USER_SSH_PUBKEY_2>>"
+
+write_files:
+  # --- .bashrc placeholders ---------------------------------------------------
+  - path: /root/.bashrc
+    permissions: "0644"
+    owner: root:root
+    content: |
+      # Root .bashrc
+      export HISTCONTROL=ignoredups:erasedups
+      export PROMPT_COMMAND='history -a; history -c; history -r; '"$PROMPT_COMMAND"
+      alias ll='ls -alF'; alias la='ls -A'; alias l='ls -CF'
+      # BEGIN USER CONTENT:
+      <<ROOT_BASHRC_CONTENT>>
+      # END USER CONTENT
+
+  - path: /home/<<STANDARD_USERNAME>>/.bashrc
+    permissions: "0644"
+    owner: <<STANDARD_USERNAME>>:<<STANDARD_USERNAME>>
+    content: |
+      # User .bashrc
+      export HISTCONTROL=ignoredups:erasedups
+      export PROMPT_COMMAND='history -a; history -c; history -r; '"$PROMPT_COMMAND"
+      alias ll='ls -alF'; alias la='ls -A'; alias l='ls -CF'
+      # BEGIN USER CONTENT:
+      <<USER_BASHRC_CONTENT>>
+      # END USER CONTENT
+
+  # --- systemd socket override (Ubuntu 22.10+ socket activation) --------------
+  # Disable port 22 listener and rebind SSH to 2522.
+  - path: /etc/systemd/system/ssh.socket.d/listen.conf
+    permissions: "0644"
+    owner: root:root
+    content: |
+      [Socket]
+      ListenStream=
+      ListenStream=2522
+
+  # --- sshd config drop-in (cloud-safe; don't touch the vendor file) ----------
+  # Enforce key-only auth globally; no passwords; no keyboard-interactive.
+  # Disallow TCP forwarding by default, then selectively allow when the local
+  # listening address is the WG IP (<<WG_LOCAL_IP>>).
+  - path: /etc/ssh/sshd_config.d/99-cloud-init.conf
+    permissions: "0644"
+    owner: root:root
+    content: |
+      # Global hardening
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      ChallengeResponseAuthentication no
+      PubkeyAuthentication yes
+      UsePAM yes
+      PermitRootLogin prohibit-password
+
+      # By default, no TCP forwarding/tunneling
+      AllowTcpForwarding no
+      PermitTunnel no
+      X11Forwarding no
+      AllowAgentForwarding yes
+
+      # When the incoming connection is TERMINATED on this host's WireGuard IP,
+      # allow SSH tunneling/forwarding. Replace with your local WG IP (no CIDR).
+      Match LocalAddress <<WG_LOCAL_IP>>
+        AllowTcpForwarding yes
+        PermitTunnel yes
+        # PermitOpen defaults to "any" when forwarding is enabled.
+        # GatewayPorts defaults to "no" (safer); change if you truly need remote binds.
+
+runcmd:
+  # --- WireGuard keypair + config --------------------------------------------
+  - [ bash, -lc, "umask 077; mkdir -p /etc/wireguard" ]
+  - [ bash, -lc, "if [ ! -s /etc/wireguard/privatekey ]; then wg genkey | tee /etc/wireguard/privatekey | wg pubkey > /etc/wireguard/publickey; fi" ]
+  - [ bash, -lc, "chmod 600 /etc/wireguard/privatekey && chmod 644 /etc/wireguard/publickey" ]
+  - |
+    bash -lc 'cat > /etc/wireguard/wg0.conf <<EOF
+    [Interface]
+    Address = <<WG_ADDRESS_CIDR>>          # e.g., 10.8.0.2/32
+    DNS = <<WG_DNS>>                       # e.g., 1.1.1.1, 9.9.9.9  (or remove)
+    ListenPort = <<WG_LISTEN_PORT>>        # e.g., 51820
+    PrivateKey = $(cat /etc/wireguard/privatekey)
+
+    # Optional NAT (uncomment and set EGRESS_IFACE to enable)
+    #PostUp = iptables -t nat -A POSTROUTING -o <<EGRESS_IFACE>> -j MASQUERADE
+    #PostDown = iptables -t nat -D POSTROUTING -o <<EGRESS_IFACE>> -j MASQUERADE
+
+    [Peer]
+    PublicKey = <<WG_PEER_PUBLIC_KEY>>
+    AllowedIPs = <<WG_ALLOWED_IPS>>        # e.g., 0.0.0.0/0, ::/0 or just your WG subnet
+    Endpoint = <<WG_PEER_ENDPOINT_HOST_OR_IP>>:<<WG_PEER_ENDPOINT_PORT>>
+    PersistentKeepalive = 25
+    EOF'
+  - [ bash, -lc, "chmod 600 /etc/wireguard/wg0.conf" ]
+
+  # Optional: enable IP forwarding if routing through this node
+  - [ bash, -lc, "sysctl -w net.ipv4.ip_forward=1" ]
+  - [ bash, -lc, "sysctl -w net.ipv6.conf.all.forwarding=1" ]
+
+  # Bring up WireGuard and enable at boot
+  - [ systemctl, enable, --now, "wg-quick@wg0" ]
+
+  # --- Apply SSH socket override + restart socket -----------------------------
+  - [ bash, -lc, "systemctl daemon-reload" ]
+  - [ bash, -lc, "systemctl restart ssh.socket" ]
+  # Optional: verify the active listen (journald emits a line; harmless if skipped)
+  - [ bash, -lc, "ss -tlpn | grep ':2522 ' || true" ]
+
+final_message: "Cloud-init completed: WG keys/config, SSH moved to :2522 via socket activation, key-only auth enforced, and WG-gated SSH tunneling enabled."

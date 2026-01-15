@@ -1,3 +1,15 @@
 [submodule "whisper-transcribe"]
 	path = whisper-transcribe
 	url = https://github.com/shaunchokshi/whisper-transcribe.git
+[submodule "cloud-init/zsh-custom/plugins/zsh-autosuggestions"]
+	path = cloud-init/zsh-custom/plugins/zsh-autosuggestions
+	url = https://github.com/zsh-users/zsh-autosuggestions
+[submodule "cloud-init/zsh-custom/plugins/zsh-history-substring-search"]
+	path = cloud-init/zsh-custom/plugins/zsh-history-substring-search
+	url = https://github.com/zsh-users/zsh-history-substring-search
+[submodule "cloud-init/zsh-custom/plugins/zsh-syntax-highlighting"]
+	path = cloud-init/zsh-custom/plugins/zsh-syntax-highlighting
+	url = https://github.com/zsh-users/zsh-syntax-highlighting
+[submodule "cloud-init/zsh-custom/plugins/zsh-completions"]
+	path = cloud-init/zsh-custom/plugins/zsh-completions
+	url = https://github.com/zsh-users/zsh-completions

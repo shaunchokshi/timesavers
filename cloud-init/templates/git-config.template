@@ -1,0 +1,29 @@
+[user]
+	email = shaunchokshi-gh@proton.me
+	name = "shaun-<<${TGT_SSH_TAG}>>"
+	signingkey = <<PLACEHOLDER>>
+[commit]
+	gpgsign = true
+[credential "https://github.com"]
+	helper =
+	helper = !/usr/bin/gh auth git-credential
+[credential "https://gist.github.com"]
+	helper =
+	helper = !/usr/bin/gh auth git-credential
+[filter "lfs"]
+	process = git-lfs filter-process
+	required = true
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+[credential]
+	helper = store
+[core]
+	excludesfile = "${HOME}/.gitignore"
+[gpg]
+	program = gpg2
+[credential]
+	helper = cache --timeout=2592000
+[pull]
+	rebase = true
+[color]
+	status = always
