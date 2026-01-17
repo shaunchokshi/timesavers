@@ -1,0 +1,111 @@
+# If not running interactively, don't do anything
+[ -z "$PS1" ] && return
+
+# don't put duplicate lines in the history. See bash(1) for more options
+# ... or force ignoredups and ignorespace
+HISTCONTROL=ignoredups:ignorespace
+
+# append to the history file, don't overwrite it
+shopt -s histappend
+
+# for setting history length see HISTSIZE and HISTFILESIZE in bash(1)
+HISTSIZE=100000
+HISTFILESIZE=2000
+
+# check the window size after each command and, if necessary,
+# update the values of LINES and COLUMNS.
+shopt -s checkwinsize
+
+# make less more friendly for non-text input files, see lesspipe(1)
+[ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
+
+# set variable identifying the chroot you work in (used in the prompt below)
+if [ -z "$debian_chroot" ] && [ -r /etc/debian_chroot ]; then
+debian_chroot=$(cat /etc/debian_chroot)
+fi
+
+# set a fancy prompt (non-color, unless we know we "want" color)
+case "$TERM" in
+xterm-color) color_prompt=yes;;
+esac
+
+# uncomment for a colored prompt, if the terminal has the capability; turned
+# off by default to not distract the user: the focus in a terminal window
+# should be on the output of commands, not on the prompt
+force_color_prompt=yes
+export LS_OPTIONS='--color=auto'
+if [ -n "$force_color_prompt" ]; then
+if [ -x /usr/bin/tput ] && tput setaf 1 >&/dev/null; then
+# We have color support; assume it's compliant with Ecma-48
+# (ISO/IEC-6429). (Lack of such support is extremely rare, and such
+# a case would tend to support setf rather than setaf.)
+color_prompt=yes
+else
+color_prompt=
+fi
+fi
+
+#if [ "$color_prompt" = yes ]; then
+    PS1='${debian_chroot:+($debian_chroot)}\[\033[01;36m\]\u\[\033[01;36m\]@\[\033[01;33m\]\h\[\033[95m\]:\[\033[01;36m\]\w\[\033[00m\]\$ '
+#else
+#    PS1='${debian_chroot:+($debian_chroot)}\u@\h:\w\$ '
+#fi
+unset color_prompt force_color_prompt
+
+# If this is an xterm set the title to user@host:dir
+case "$TERM" in
+xterm*|rxvt*)
+PS1="\[\e]0;${debian_chroot:+($debian_chroot)}\u@\h: \w\a\]$PS1"
+;;
+*)
+;;
+esac
+
+# enable color support of ls and also add handy aliases
+if [ -x /usr/bin/dircolors ]; then
+test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors -b)"
+#alias ls='ls --color=auto'
+alias dir='dir --color=auto'
+alias vdir='vdir --color=auto'
+
+alias grep='grep --color=auto'
+alias fgrep='fgrep --color=auto'
+alias egrep='egrep --color=auto'
+fi
+
+alias validate_traefik="/root/pip-venv/bin/validate_traefik"
+
+# some more ls aliases
+alias ls='ls $LS_OPTIONS -h'
+alias ll='ls $LS_OPTIONS -lh'
+alias l='ls $LS_OPTIONS -lah'
+alias ls-bigsmall='ls $LS_OPTIONS -Sh'
+alias ls-smallbig='ls $LS_OPTIONS -rsh'
+alias ls-newest='ls $LS_OPTIONS -th'
+alias ls-oldest='ls $LS_OPTIONS -rth'
+alias ls-type='ls $LS_OPTIONS -laFh'
+alias ls-dir='ls -lha --group-directories-first'
+
+# Some more alias to avoid making mistakes:
+alias rm='rm -i'
+alias cp='cp -i'
+alias mv='mv -i'
+alias l.='ls -d .* --color=auto'
+alias ..='cd ..'
+alias now='date +%T'
+alias ports='ss -tulpn'
+alias lt='ls --human-readable --size -1 -S -F'
+alias hg='history|grep'
+alias count='find . -type f | wc -l'
+alias ip='ip -c'
+alias cat='batcat -pp '
+
+if [ -f ~/.bash_aliases ]; then
+. ~/.bash_aliases
+fi
+
+if [ -f /etc/bash_completion ] && ! shopt -oq posix; then
+. /etc/bash_completion
+fi
+alias ports='netstat -tulpn'
+alias openssl-check='openssl x509 -noout -text -in '

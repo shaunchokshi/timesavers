@@ -1,8 +1,4 @@
 #cloud-config
-#
-# MASTER TEMPLATE (safe to paste/upload)
-# Placeholders look like <<${VAR}>> and MUST be rendered locally before use.
-#
 
 hostname: "<<${HOSTNAME}>>"
 fqdn: "<<${HOSTNAME}>>"
@@ -58,7 +54,7 @@ write_files:
       export HISTCONTROL=ignoredups:erasedups
       alias ll='ls -alF'
       # BEGIN USER CONTENT:
-      <<${ROOT_BASHRC_CONTENT}>>
+      <<${ROOT_BASHRC_FROM_FILE:ROOT_BASHRC_PATH}>>
       # END USER CONTENT
 
   - path: /home/<<${STANDARD_USERNAME}>>/.bashrc
@@ -69,7 +65,7 @@ write_files:
       export HISTCONTROL=ignoredups:erasedups
       alias ll='ls -alF'
       # BEGIN USER CONTENT:
-      <<${USER_BASHRC_CONTENT}>>
+      <<${USER_BASHRC_FROM_FILE:USER_BASHRC_PATH}>>
       # END USER CONTENT
 
   # --- systemd socket override: move ssh off 22 -> 2522 -----------------------
@@ -192,25 +188,159 @@ runcmd:
 
   # --- WireGuard keys + wg0.conf ---------------------------------------------
   - [ bash, -lc, "umask 077; mkdir -p /etc/wireguard" ]
-  - [ bash, -lc, "if [ ! -s /etc/wireguard/privatekey ]; then wg genkey | tee /etc/wireguard/privatekey | wg pubkey > /etc/wireguard/publickey; fi" ]
-  - [ bash, -lc, "chmod 600 /etc/wireguard/privatekey && chmod 644 /etc/wireguard/publickey" ]
-  - |
-    bash -lc 'cat > /etc/wireguard/wg0.conf <<EOF
-    [Interface]
-    Address = <<${WG_ADDRESS_CIDR}>>
-    ListenPort = <<${WG_LISTEN_PORT}>>
-    PrivateKey = $(cat /etc/wireguard/privatekey)
+  - path: /etc/wireguard/wg0.conf.template
+    permissions: "0600"
+    owner: root:root
+    content: |
+      [Interface]
+      Address = <<${WG_ADDRESS_CIDR}>>
+      ListenPort = <<${WG_LISTEN_PORT}>>
+      PrivateKey = __FILL_ME_PRIVATE_KEY__
 
-    [Peer]
-    PublicKey = <<${WG_PEER_PUBLIC_KEY}>>
-    AllowedIPs = <<${WG_ALLOWED_IPS}>>
-    Endpoint = <<${WG_PEER_ENDPOINT_HOST_OR_IP}>>:<<${WG_PEER_ENDPOINT_PORT}>>
-    PersistentKeepalive = 25
-    EOF'
-  - [ bash, -lc, "chmod 600 /etc/wireguard/wg0.conf" ]
-  - [ bash, -lc, "sysctl -w net.ipv4.ip_forward=1" ]
-  - [ bash, -lc, "sysctl -w net.ipv6.conf.all.forwarding=1" ]
-  - [ systemctl, enable, --now, "wg-quick@wg0" ]
+      [Peer]
+      PublicKey = <<${WG_PEER_PUBLIC_KEY}>>
+      PresharedKey = __FILL_ME_PRESHARED_KEY__
+      AllowedIPs = <<${WG_ALLOWED_IPS}>>
+      Endpoint = <<${WG_PEER_ENDPOINT_HOST_OR_IP}>>:<<${WG_PEER_ENDPOINT_PORT}>>
+      PersistentKeepalive = 25
+
+  - path: /usr/local/sbin/bootstrap_sensitive.sh
+    permissions: "0700"
+    owner: root:root
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      BOLD="\e[1m"; GREEN="\e[32m"; YELLOW="\e[33m"; RED="\e[31m"; RESET="\e[0m"
+
+      die() { echo -e "${RED}ERROR:${RESET} $*" >&2; exit 1; }
+      have() { command -v "$1" >/dev/null 2>&1; }
+
+      if [ "$(id -u)" -ne 0 ]; then
+        die "Run as root (sudo -i or sudo /usr/local/sbin/bootstrap_sensitive.sh)"
+      fi
+
+      echo -e "${BOLD}Sensitive bootstrap:${RESET} WireGuard + optional StorBox"
+
+      # ---- WireGuard secrets -------------------------------------------------
+      mkdir -p /etc/wireguard
+      chmod 700 /etc/wireguard
+
+      WG_CONF="/etc/wireguard/wg0.conf"
+      WG_TEMPLATE="/etc/wireguard/wg0.conf.template"
+      WG_PRIV="/etc/wireguard/privatekey"
+      WG_PSK="/etc/wireguard/presharedkey"
+
+      if [ -f "${WG_CONF}" ]; then
+        echo -e "${YELLOW}WireGuard config already exists:${RESET} ${WG_CONF}"
+      else
+        [ -f "${WG_TEMPLATE}" ] || die "Missing template: ${WG_TEMPLATE}"
+        have wg || die "'wg' not found; is wireguard-tools installed?"
+
+        echo -e "${BOLD}WireGuard keys${RESET}"
+        read -r -p "Generate a NEW WireGuard private key on this host? [y/N] " gen_priv
+        if [[ "${gen_priv,,}" == "y" ]]; then
+          umask 077
+          wg genkey > "${WG_PRIV}"
+          chmod 600 "${WG_PRIV}"
+          echo -e "${GREEN}Generated:${RESET} ${WG_PRIV}"
+          echo -e "${YELLOW}Public key (share with peer):${RESET}"
+          wg pubkey < "${WG_PRIV}"
+        else
+          echo -e "${YELLOW}Paste the WireGuard PRIVATE key now (will not echo):${RESET}"
+          read -r -s priv_in
+          echo
+          [ -n "${priv_in}" ] || die "Empty private key."
+          umask 077
+          printf "%s\n" "${priv_in}" > "${WG_PRIV}"
+          chmod 600 "${WG_PRIV}"
+        fi
+
+        read -r -p "Generate a NEW WireGuard preshared key (PSK) on this host? [y/N] " gen_psk
+        if [[ "${gen_psk,,}" == "y" ]]; then
+          umask 077
+          wg genpsk > "${WG_PSK}"
+          chmod 600 "${WG_PSK}"
+          echo -e "${GREEN}Generated:${RESET} ${WG_PSK}"
+          echo -e "${YELLOW}PSK (share securely with peer):${RESET}"
+          cat "${WG_PSK}"
+        else
+          echo -e "${YELLOW}Paste the WireGuard PRESHARED key (PSK) now (will not echo):${RESET}"
+          read -r -s psk_in
+          echo
+          [ -n "${psk_in}" ] || die "Empty PSK."
+          umask 077
+          printf "%s\n" "${psk_in}" > "${WG_PSK}"
+          chmod 600 "${WG_PSK}"
+        fi
+
+        # Render final wg0.conf from template
+        umask 077
+        sed \
+          -e "s|__FILL_ME_PRIVATE_KEY__|$(cat "${WG_PRIV}")|g" \
+          -e "s|__FILL_ME_PRESHARED_KEY__|$(cat "${WG_PSK}")|g" \
+          "${WG_TEMPLATE}" > "${WG_CONF}"
+        chmod 600 "${WG_CONF}"
+        echo -e "${GREEN}Wrote:${RESET} ${WG_CONF}"
+      fi
+
+      read -r -p "Bring up WireGuard now (wg-quick@wg0)? [y/N] " upwg
+      if [[ "${upwg,,}" == "y" ]]; then
+        systemctl enable --now wg-quick@wg0
+        echo -e "${GREEN}WireGuard is up.${RESET}"
+      fi
+
+      # ---- Optional StorBox credentials --------------------------------------
+      # We do not store passwords in cloud-init. If fstab entry exists, we create
+      # the credentials file it references. If not, we can add one interactively.
+      echo
+      read -r -p "Configure Hetzner Storage Box CIFS credentials now? [y/N] " dostor
+      if [[ "${dostor,,}" == "y" ]]; then
+        read -e -i "h0" -p "STORBOX_MAIN (e.g., h0): " STORBOX_MAIN
+        read -e -i "" -p "STORBOX_SUBACCT (e.g., u12345-sub1): " STORBOX_SUBACCT
+        read -e -i "" -p "STORBOX_SUBURI (e.g., u12345-sub1.your-storagebox.de/u12345-sub1): " STORBOX_SUBURI
+        echo -e "${YELLOW}Storage Box password (will not echo):${RESET}"
+        read -r -s STORBOX_SUBACCT_PASSWORD
+        echo
+        [ -n "${STORBOX_SUBACCT_PASSWORD}" ] || die "Empty StorBox password."
+
+        mkdir -p /root/.secrets
+        chmod 700 /root/.secrets
+        CRED_FILE="/root/.secrets/smb-STORBOX-${STORBOX_MAIN}"
+        umask 077
+        cat > "${CRED_FILE}" <<EOF
+      username=${STORBOX_SUBACCT}
+      password=${STORBOX_SUBACCT_PASSWORD}
+      EOF
+        chmod 600 "${CRED_FILE}"
+        echo -e "${GREEN}Wrote:${RESET} ${CRED_FILE}"
+
+        MNT="/mnt/STORBOX/${STORBOX_MAIN}"
+        mkdir -p "${MNT}"
+
+        # Add fstab entry if missing
+        if ! grep -q "smb-STORBOX-${STORBOX_MAIN}" /etc/fstab; then
+          cat >> /etc/fstab <<EOF
+
+      # hetzner storage box ${STORBOX_MAIN} with sub account ${STORBOX_SUBACCT};
+      # it will be accessible via ${STORBOX_SUBURI} and the credentials
+      # will need to be copied from \$HOME/.secrets/smb-STORBOX-${STORBOX_MAIN}
+      //${STORBOX_SUBURI} ${MNT} cifs credentials=${CRED_FILE},uid=1000,gid=1000,iocharset=utf8,file_mode=0777,dir_mode=0777,_netdev,noserverino 0 0
+      EOF
+          echo -e "${GREEN}Added fstab entry.${RESET}"
+        else
+          echo -e "${YELLOW}fstab already has a StorBox entry for:${RESET} ${STORBOX_MAIN}"
+        fi
+
+        read -r -p "Mount now (mount -a)? [y/N] " mountnow
+        if [[ "${mountnow,,}" == "y" ]]; then
+          mount -a || true
+          echo -e "${GREEN}Mount attempted. Check:${RESET} mount | grep STORBOX || true"
+        fi
+      fi
+
+      echo
+      echo -e "${GREEN}Done.${RESET} You can rerun this script anytime: /usr/local/sbin/bootstrap_sensitive.sh"
 
   # --- Timesavers repo + zsh wiring for root + STANDARD_USERNAME -------------
   - |
@@ -277,5 +407,9 @@ runcmd:
   - [ bash, -lc, "mkdir -p /mnt/STORBOX/<<${STORBOX_MAIN}>>" ]
   - [ bash, -lc, "mount -a || true" ]
   # END_STORBOX_FSTAB
+# Remind about sensitive bootstrap if wg0.conf doesn't exist yet
+if [ -t 1 ] && [ -x /usr/local/sbin/bootstrap_sensitive.sh ] && [ ! -f /etc/wireguard/wg0.conf ]; then
+  echo "NOTE: WireGuard not configured yet. Run: sudo /usr/local/sbin/bootstrap_sensitive.sh"
+fi
 
 final_message: "Provisioned: SSH on 2522 (socket activation), key-only auth, WG-gated forwarding, zsh+oh-my-zsh+timesavers+starship-ready, gh/git, CIFS/NFS, eza/bat/htop, terminfo, fonts, optional Hetzner Storage Box."

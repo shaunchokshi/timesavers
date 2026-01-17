@@ -22,8 +22,8 @@ WG_ALLOWED_IPS=0.0.0.0/0, ::/0
 
 # Optional bashrc payloads (simple one-liners recommended; or you can inject
 # heredoc-like content but mind YAML quoting when you do)
-ROOT_BASHRC_CONTENT=
-USER_BASHRC_CONTENT=
+ROOT_BASHRC_PATH=
+USER_BASHRC_PATH=
 
 # Hetzner Storage Box usage toggle:
 #   true / yes / 1 => enable storbox fstab + credentials
@@ -34,9 +34,7 @@ USE_STORBOX=false
 # Example semantics:
 #   STORBOX_MAIN=h0
 #   STORBOX_SUBACCT=u527940-sub1
-#   STORBOX_SUBACCT_PASSWORD=supersecret
 #   STORBOX_SUBURI=u527940-sub1.your-storagebox.de/u527940-sub1
 STORBOX_MAIN=
 STORBOX_SUBACCT=
-STORBOX_SUBACCT_PASSWORD=
 STORBOX_SUBURI=

@@ -29,13 +29,14 @@ if [ ! -f "${HOSTMETA}" ]; then
   echo "Warning: ${HOSTMETA} not found; metadata header will be minimal."
 fi
 
+set -a
 # shellcheck disable=SC1090
 source "${TGT_ENV}"
 
 # Ensure SSH_TAG is present in environment (used in some placeholders)
 export SSH_TAG="${SSH_TAG:-${TGT_SSH_TAG}}"
 
-python3 - "$MASTER_TEMPLATE" "$OUTFILE" "$HOSTMETA" <<'PY'
+python3 - "$MASTER_TEMPLATE" "$OUTFILE" "$HOSTMETA" "$TEMPLATES" <<'PY'
 import os, re, sys, pathlib
 
 src = sys.argv[1]
@@ -44,18 +45,56 @@ meta_path = sys.argv[3] if len(sys.argv) > 3 else ""
 
 with open(src, "r", encoding="utf-8") as f:
     data = f.read()
+templates_dir = sys.argv[4] if len(sys.argv) > 4 else ""
 
-pattern = re.compile(r"<<\$\{([A-Za-z_][A-Za-z0-9_]*)\}>>")
+pattern = re.compile(r"<<\$\{([A-Za-z_][A-Za-z0-9_]*)(?::([A-Za-z_][A-Za-z0-9_]*))?\}>>")
 
 missing = set()
+optional = {
+    "ROOT_SSH_PUBKEY_2",
+    "USER_SSH_PUBKEY_2",
+    "ROOT_BASHRC_CONTENT",
+    "USER_BASHRC_CONTENT",
+    # StorBox fields are optional in general; if USE_STORBOX=true you can enforce them separately
+    "STORBOX_MAIN",
+    "STORBOX_SUBACCT",
+    "STORBOX_SUBACCT_PASSWORD",
+    "STORBOX_SUBURI",
+}
+
+from pathlib import Path
+
+def read_template_file(path_value: str) -> str:
+    if not templates_dir:
+        raise RuntimeError("templates_dir not provided to renderer")
+    p = Path(templates_dir) / path_value
+    if not p.is_file():
+        raise RuntimeError(f"Missing template include file: {p}")
+    # Read verbatim; cloud-init YAML block will preserve newlines
+    return p.read_text(encoding="utf-8")
 
 def repl(m):
     key = m.group(1)
+    path_key = m.group(2)
+
+    # File-include placeholder: <<${LABEL:ENVVAR}>> means:
+    # look up ENVVAR to get filename, then read that file from templates_dir
+    if path_key:
+        path_value = os.environ.get(path_key, "").strip()
+        if not path_value:
+            # treat missing path as empty include (or make it mandatory if you prefer)
+            return ""
+        return read_template_file(path_value)
+
+    # Normal env substitution: <<${VAR}>>
     val = os.environ.get(key)
     if val is None:
+        if key in optional:
+            return ""
         missing.add(key)
         return m.group(0)
     return val
+
 
 rendered = pattern.sub(repl, data)
 

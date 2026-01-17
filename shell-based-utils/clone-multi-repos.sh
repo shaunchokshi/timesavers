@@ -1,11 +1,12 @@
 #!/bin/bash
 
 
-cntx="users"
+cntx="orgs"
 read -e -p "Context of repo ownership [orgs] or [users]:" cntx
 
 if [ -z "$1" ]; then
-    read -e -p "Name (of user or org):" name
+    name="Nicolai-Electronics"
+    read -e -i $name -p "Name (of user or org):" name
 else
     name=$1
 fi
