@@ -83,7 +83,9 @@ for DOMAIN in "${DOMAINS[@]}"; do
 
   log_info "Adding ${DOMAIN} ..."
 
-  RESPONSE=$(curl --silent --show-error \
+  # Use `if RESPONSE=$(curl ...)` so a transport failure does not trip `set -e`
+  # (command substitutions in `if`/`while` conditions are exempt from errexit).
+  if RESPONSE=$(curl --silent --show-error \
     --request POST "${API_BASE}/zones" \
     --header "Content-Type: application/json" \
     --header "Authorization: Bearer ${API_TOKEN}" \
@@ -93,28 +95,31 @@ for DOMAIN in "${DOMAINS[@]}"; do
       --arg acct_id "${ACCOUNT_ID}" \
       '{account: {id: $acct_id}, name: $name, type: $type}'
     )"
-  )
+  ); then
+    SUCCESS_FIELD=$(echo "${RESPONSE}" | jq -r '.success')
 
-  SUCCESS_FIELD=$(echo "${RESPONSE}" | jq -r '.success')
-
-  if [[ "${SUCCESS_FIELD}" == "true" ]]; then
-    ZONE_ID=$(echo "${RESPONSE}"      | jq -r '.result.id')
-    NS=$(echo "${RESPONSE}"           | jq -r '.result.name_servers | join(", ")')
-    STATUS=$(echo "${RESPONSE}"       | jq -r '.result.status')
-    log_ok "${DOMAIN}  →  zone_id=${ZONE_ID}  status=${STATUS}"
-    log_ok "          nameservers: ${NS}"
-    (( SUCCESS++ )) || true
-  else
-    ERR_CODE=$(echo "${RESPONSE}"    | jq -r '.errors[0].code    // "unknown"')
-    ERR_MSG=$(echo "${RESPONSE}"     | jq -r '.errors[0].message // "unknown"')
-    # 1049 = zone already exists; treat as a skip rather than hard failure
-    if [[ "${ERR_CODE}" == "1049" ]]; then
-      log_info "${DOMAIN}  →  already exists in Cloudflare (skipping)"
-      (( SKIPPED++ )) || true
+    if [[ "${SUCCESS_FIELD}" == "true" ]]; then
+      ZONE_ID=$(echo "${RESPONSE}"      | jq -r '.result.id')
+      NS=$(echo "${RESPONSE}"           | jq -r '.result.name_servers | join(", ")')
+      STATUS=$(echo "${RESPONSE}"       | jq -r '.result.status')
+      log_ok "${DOMAIN}  →  zone_id=${ZONE_ID}  status=${STATUS}"
+      log_ok "          nameservers: ${NS}"
+      (( SUCCESS++ )) || true
     else
-      log_err "${DOMAIN}  →  code=${ERR_CODE}  message=${ERR_MSG}"
-      (( FAILED++ )) || true
+      ERR_CODE=$(echo "${RESPONSE}"    | jq -r '.errors[0].code    // "unknown"')
+      ERR_MSG=$(echo "${RESPONSE}"     | jq -r '.errors[0].message // "unknown"')
+      # 1049 = zone already exists; treat as a skip rather than hard failure
+      if [[ "${ERR_CODE}" == "1049" ]]; then
+        log_info "${DOMAIN}  →  already exists in Cloudflare (skipping)"
+        (( SKIPPED++ )) || true
+      else
+        log_err "${DOMAIN}  →  code=${ERR_CODE}  message=${ERR_MSG}"
+        (( FAILED++ )) || true
+      fi
     fi
+  else
+    log_err "${DOMAIN}  →  curl failed (network/TLS/timeout/etc.); domain not processed"
+    (( FAILED++ )) || true
   fi
 
   echo
