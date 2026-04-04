@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# paste_clipboard
+# Prints clipboard contents to stdout.
+#
+# Works locally on:
+# - macOS via pbpaste
+# - Linux Wayland via wl-paste
+# - Linux X11 via xclip / xsel
+#
+# Note:
+# Reverse clipboard access over SSH is not generally available through OSC 52,
+# so this is primarily for local use.
+
+have_cmd() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+main() {
+  if have_cmd pbpaste; then
+    exec pbpaste
+  fi
+
+  if have_cmd wl-paste && [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+    exec wl-paste --no-newline
+  fi
+
+  if have_cmd xclip && [[ -n "${DISPLAY:-}" ]]; then
+    exec xclip -selection clipboard -o
+  fi
+
+  if have_cmd xsel && [[ -n "${DISPLAY:-}" ]]; then
+    exec xsel --clipboard --output
+  fi
+
+  printf 'paste_clipboard: no supported clipboard backend found in this environment\n' >&2
+  exit 1
+}
+
+main "$@"

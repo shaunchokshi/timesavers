@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# copy_clipboard
+# Copies stdin or arguments to the local clipboard.
+#
+# Priority:
+# 1. macOS local: pbcopy
+# 2. Linux local Wayland: wl-copy
+# 3. Linux local X11: xclip / xsel
+# 4. SSH/headless/fallback: OSC 52 escape sequence
+#
+# Usage:
+#   copy_clipboard "hello world"
+#   printf 'hello\n' | copy_clipboard
+#   some_command | copy_clipboard
+
+have_cmd() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+is_ssh() {
+  [[ -n "${SSH_CONNECTION:-}" || -n "${SSH_CLIENT:-}" || -n "${SSH_TTY:-}" ]]
+}
+
+read_input() {
+  if [[ $# -gt 0 ]]; then
+    printf '%s' "$*"
+  elif [[ ! -t 0 ]]; then
+    cat
+  else
+    return 1
+  fi
+}
+
+osc52_copy() {
+  local data="${1:-}"
+  local encoded maxlen
+
+  if [[ -z "$data" ]]; then
+    return 0
+  fi
+
+  encoded="$(
+    printf '%s' "$data" | base64 | tr -d '\r\n'
+  )"
+
+  # Conservative ceiling to avoid silent failures in some terminals.
+  maxlen=100000
+  if (( ${#encoded} > maxlen )); then
+    printf 'copy_clipboard: input too large for reliable OSC 52 copy (%s bytes encoded)\n' "${#encoded}" >&2
+    return 1
+  fi
+
+  if [[ -n "${TMUX:-}" ]]; then
+    # tmux passthrough wrapper
+    printf '\033Ptmux;\033\033]52;c;%s\a\033\\' "$encoded"
+  else
+    printf '\033]52;c;%s\a' "$encoded"
+  fi
+}
+
+main() {
+  local input
+  input="$(read_input "$@")" || {
+    printf 'Usage: copy_clipboard <text>  OR  command | copy_clipboard\n' >&2
+    exit 2
+  }
+
+  # Prefer OSC 52 during SSH so clipboard lands on the local machine.
+  if is_ssh; then
+    osc52_copy "$input"
+    exit $?
+  fi
+
+  # macOS local
+  if have_cmd pbcopy; then
+    printf '%s' "$input" | pbcopy
+    exit 0
+  fi
+
+  # Linux local Wayland
+  if have_cmd wl-copy && [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+    printf '%s' "$input" | wl-copy
+    exit 0
+  fi
+
+  # Linux local X11
+  if have_cmd xclip && [[ -n "${DISPLAY:-}" ]]; then
+    printf '%s' "$input" | xclip -selection clipboard
+    exit 0
+  fi
+
+  if have_cmd xsel && [[ -n "${DISPLAY:-}" ]]; then
+    printf '%s' "$input" | xsel --clipboard --input
+    exit 0
+  fi
+
+  # Fallback
+  osc52_copy "$input"
+}
+
+main "$@"
