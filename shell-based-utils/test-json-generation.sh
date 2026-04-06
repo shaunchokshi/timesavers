@@ -3,7 +3,7 @@
 # Test script to verify JSON generation doesn't include ANSI color codes
 
 echo "Testing email CSV to JSON array conversion..."
-test_emails="shaun@chokshi.net,shaun@ckservicesllc.com"
+test_emails="test@example.com"
 
 # Call the Python function directly (same as in the script)
 result=$(python3 -c '
@@ -57,7 +57,7 @@ test_payload=$(python3 -c "
 import json
 payload = {
     'documents': ['$test_doc_sid'],
-    'notification_emails': ['shaun@chokshi.net', 'shaun@ckservicesllc.com']
+    'notification_emails': ['test@example.com']
 }
 print(json.dumps(payload, indent=2))
 ")
