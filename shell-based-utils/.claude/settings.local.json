@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(command -v lit)",
+      "Bash(lit --version)",
+      "Bash(lit parse *)",
+      "Read(//private/tmp/**)",
+      "Bash(pandoc --pdf-engine=typst _lit_test.md -o _lit_test.pdf)",
+      "Bash(python3 -c \"import json; d=json.load\\(open\\('_lit_test.json'\\)\\); import sys; json.dump\\(d, sys.stdout, indent=2\\)\")",
+      "Bash(pandoc _lit_test.md -o _lit_test.pdf)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 *)",
+      "Bash(bash -n /Users/shaun/devspace/myprojects/timesavers/shell-based-utils/batch-convert.sh)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git fetch *)",
+      "Bash(git pull *)"
+    ]
+  }
+}
