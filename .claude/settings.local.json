@@ -5,7 +5,9 @@
       "Bash(python3 -c \"import openpyxl; print\\('openpyxl', openpyxl.__version__\\)\")",
       "Bash(python3 -m pip install --user --quiet openpyxl)",
       "Bash(python3 -c \"import openpyxl; print\\('openpyxl', openpyxl.__version__, 'OK'\\)\")",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(python3 -c \"import py_compile; py_compile.compile\\('/Users/shaun/devspace/myprojects/timesavers/shell-based-utils/xlsx-helper.py', doraise=True\\)\")",
+      "Bash(echo \"exit=$?\")"
     ]
   }
 }

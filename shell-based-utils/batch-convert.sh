@@ -105,6 +105,8 @@ fi
 
 echo "Common output formats for OUTPUT:"
 echo "pdf, md (markdown), docx, odt, html (html4/5), json, asciidoc, txt, rtf, pptx"
+echo "xlsx (only from csv/tsv/md input — md is parsed leniently, every pipe-table"
+echo "      becomes a sheet named after the preceding ## heading or Sheet1, Sheet2, ...)"
 echo "This is not an exhaustive list - to get all OUTPUT formats, run:"
 echo "pandoc --list-output-formats"
 
@@ -150,6 +152,35 @@ if [[ "$input_format" == "xlsx" ]]; then
     fi
 fi
 
+# XLSX output is only valid from tabular sources (csv/tsv/md). pandoc cannot
+# write xlsx, so anything else is rejected up front rather than failing later.
+if [[ "$output_format" == "xlsx" ]]; then
+    case "$input_format" in
+        csv|tsv|markdown)
+            ;;
+        xlsx)
+            : # already handled above
+            ;;
+        *)
+            echo "Output format xlsx is only supported from csv, tsv, or markdown input."
+            echo "Got input_format=$input_format. For pdf, convert pdf → md first, sanity-check the tables, then md → xlsx."
+            exit 1
+            ;;
+    esac
+    if [ ! -f "$XLSX_HELPER" ]; then
+        echo "Helper not found at $XLSX_HELPER"
+        exit 1
+    fi
+    if ! python3 -c "import openpyxl" 2>/dev/null; then
+        echo "Python module 'openpyxl' is required for xlsx output."
+        echo "Install with one of:"
+        echo "  pip install openpyxl"
+        echo "  pip3 install openpyxl"
+        echo "  brew install python-openpyxl"
+        exit 1
+    fi
+fi
+
 workdir="$(pwd)"
 read -e -i "$workdir" -p "Enter path for files' directory:" workdir
 
@@ -180,6 +211,14 @@ convert_file() {
         return
     fi
 
+    if [[ "$output_format" == "xlsx" ]]; then
+        # csv/tsv/md → xlsx via xlsx-helper. Other inputs were rejected above.
+        local from_fmt="${input_format/markdown/md}"
+        python3 "$XLSX_HELPER" "$input_file" --from "$from_fmt" --to xlsx --out "$output_file"
+        echo "Converted ($from_fmt → xlsx) $input_file to $output_file"
+        return
+    fi
+
     if [[ "$input_format" == "pdf" ]]; then
         local tmp_json tmp_md
         tmp_json=$(mktemp -t liteparse-json.XXXXXX)
@@ -190,7 +229,7 @@ convert_file() {
         if [[ "$output_format" == "markdown" ]]; then
             mv "$tmp_md" "$output_file"
         else
-            pandoc -f markdown -t "$output_format" "$tmp_md" -o "$output_file"
+            pandoc --pdf-engine=typst -f markdown -t "$output_format" "$tmp_md" -o "$output_file"
             rm -f "$tmp_md"
         fi
         rm -f "$tmp_json"
@@ -219,7 +258,7 @@ convert_file() {
                 local tmp_md
                 tmp_md=$(mktemp -t xlsx-md.XXXXXX)
                 python3 "$XLSX_HELPER" "$input_file" --to md --out "$tmp_md"
-                pandoc -f markdown -t "$output_format" "$tmp_md" -o "$output_file"
+                pandoc --pdf-engine=typst -f markdown -t "$output_format" "$tmp_md" -o "$output_file"
                 rm -f "$tmp_md"
                 echo "Converted (xlsx via markdown) $input_file to $output_file"
                 ;;

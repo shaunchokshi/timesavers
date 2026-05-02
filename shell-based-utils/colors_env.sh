@@ -1,4 +1,5 @@
-# colors.env
+#!/bin/sh
+# colors_env.sh
 # ANSI color/style escape sequences as environment variables.
 # Source from bash or zsh:  source colors.env
 # Then use:  echo "${ANSI_RED}hello${ANSI_RESET}"
@@ -23,6 +24,8 @@
 # ============================================================
 # Reset / standalone style modifiers
 # ============================================================
+
+colorlist=(
 export ANSI_RESET=$'\e[0m'
 export ANSI_BOLD=$'\e[1m'
 export ANSI_DIM=$'\e[2m'
@@ -643,4 +646,7 @@ export ANSI_BACKGROUND_Grey82=$'\e[48;5;252m'
 export ANSI_BACKGROUND_Grey85=$'\e[48;5;253m'
 export ANSI_BACKGROUND_Grey89=$'\e[48;5;254m'
 export ANSI_BACKGROUND_Grey93=$'\e[48;5;255m'
+)
 
+colors=$( ANSI_COLORS=:; printf '%s' "${colorlist[*]}" )
+export ANSI_COLORS
