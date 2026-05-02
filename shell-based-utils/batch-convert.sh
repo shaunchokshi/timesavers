@@ -15,9 +15,10 @@
 #   help [command]                                  display help for command
 
 source $ANSI_COLORS
-
+TESSDATA_PREFIX="${HOME}/.local/tessdata"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIT_HELPER="$SCRIPT_DIR/lit-pdf-to-md.py"
+XLSX_HELPER="$SCRIPT_DIR/xlsx-helper.py"
 
 ensure_homebrew() {
     if command -v brew >/dev/null 2>&1; then
@@ -87,6 +88,8 @@ echo "odt"
 echo "html"
 echo "docx"
 echo "pdf  (routed through liteparse — JSON intermediate preserves layout)"
+echo "xlsx (routed through openpyxl helper — csv/tsv emit one file per sheet,"
+echo "      md/json combine all sheets, others go via markdown → pandoc)"
 echo "This is not an exhaustive list - to get all INPUT formats, run:"
 echo "pandoc --list-input-formats"
 
@@ -125,6 +128,26 @@ if [[ "$input_format" == "pdf" ]]; then
         exit 1
     fi
     ensure_liteparse || exit 1
+fi
+
+# XLSX input requires openpyxl + helper
+if [[ "$input_format" == "xlsx" ]]; then
+    if [[ "$output_format" == "xlsx" ]]; then
+        echo "xlsx → xlsx is a no-op. Aborting."
+        exit 0
+    fi
+    if [ ! -f "$XLSX_HELPER" ]; then
+        echo "Helper not found at $XLSX_HELPER"
+        exit 1
+    fi
+    if ! python3 -c "import openpyxl" 2>/dev/null; then
+        echo "Python module 'openpyxl' is required for xlsx input."
+        echo "Install with one of:"
+        echo "  pip install openpyxl"
+        echo "  pip3 install openpyxl"
+        echo "  brew install python-openpyxl"
+        exit 1
+    fi
 fi
 
 workdir="$(pwd)"
@@ -172,6 +195,35 @@ convert_file() {
         fi
         rm -f "$tmp_json"
         echo "Converted (pdf via liteparse) $input_file to $output_file"
+    elif [[ "$input_format" == "xlsx" ]]; then
+        case "$output_format" in
+            csv|tsv)
+                # Multi-sheet workbooks emit "${stem}__{SheetName}.${ext}" — the
+                # generic "$output_file" check above only catches the single-sheet
+                # case, so re-check for the suffixed variant here.
+                shopt -s nullglob
+                local existing=("$outdir/${filename}__"*."$output_ext")
+                shopt -u nullglob
+                if [ ${#existing[@]} -gt 0 ]; then
+                    echo "Skipping $input_file – multi-sheet outputs exist (e.g. ${existing[0]})"
+                    return
+                fi
+                python3 "$XLSX_HELPER" "$input_file" --to "$output_format" --out "$outdir"
+                echo "Converted (xlsx) $input_file → $outdir/${filename}{,__<sheet>}.${output_ext}"
+                ;;
+            markdown|json)
+                python3 "$XLSX_HELPER" "$input_file" --to "${output_format/markdown/md}" --out "$output_file"
+                echo "Converted (xlsx) $input_file to $output_file"
+                ;;
+            *)
+                local tmp_md
+                tmp_md=$(mktemp -t xlsx-md.XXXXXX)
+                python3 "$XLSX_HELPER" "$input_file" --to md --out "$tmp_md"
+                pandoc -f markdown -t "$output_format" "$tmp_md" -o "$output_file"
+                rm -f "$tmp_md"
+                echo "Converted (xlsx via markdown) $input_file to $output_file"
+                ;;
+        esac
     else
         pandoc --pdf-engine=typst -f "$input_format" -t "$output_format" "$input_file" -o "$output_file"
         echo "Converted $input_file to $output_file"
