@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bash -n /Users/shaun/devspace/myprojects/timesavers/shell-based-utils/batch-convert.sh)",
+      "Bash(python3 -c \"import openpyxl; print\\('openpyxl', openpyxl.__version__\\)\")",
+      "Bash(python3 -m pip install --user --quiet openpyxl)",
+      "Bash(python3 -c \"import openpyxl; print\\('openpyxl', openpyxl.__version__, 'OK'\\)\")",
+      "Bash(git *)"
+    ]
+  }
+}
